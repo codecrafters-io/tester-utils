@@ -23,29 +23,40 @@ type TestRunnerStep struct {
 
 // testRunner is used to run multiple tests
 type TestRunner struct {
-	isQuiet bool // Used for anti-cheat tests, where we only want Critical logs to be emitted
-	steps   []TestRunnerStep
+	executablePath string // executablePath is defined in the TesterDefinition and passed in here
+	isDebug        bool   // isDebug is fetched from the user's codecrafters.yml file
+	isQuiet        bool   // Used for anti-cheat tests, where we only want Critical logs to be emitted
+	steps          []TestRunnerStep
 }
 
-func NewTestRunner(steps []TestRunnerStep) TestRunner {
+func NewTestRunner(steps []TestRunnerStep, isDebug bool, executablePath string) TestRunner {
 	return TestRunner{
-		steps: steps,
+		isDebug:        isDebug,
+		executablePath: executablePath,
+		steps:          steps,
 	}
 }
 
-func NewQuietTestRunner(steps []TestRunnerStep) TestRunner {
-	return TestRunner{isQuiet: true, steps: steps}
+func NewQuietTestRunner(steps []TestRunnerStep, executablePath string) TestRunner {
+	return TestRunner{
+		isQuiet:        true,
+		steps:          steps,
+		isDebug:        false,
+		executablePath: executablePath,
+	}
 }
 
 // Run runs all tests in a stageRunner
-func (r TestRunner) Run(isDebug bool, executable *executable.Executable) bool {
+func (r TestRunner) Run() bool {
+	executable := r.getExecutable()
+
 	for index, step := range r.steps {
 		if index != 0 {
 			fmt.Println("")
 		}
 
 		testCaseHarness := test_case_harness.TestCaseHarness{
-			Logger:     r.getLoggerForStep(isDebug, step),
+			Logger:     r.getLoggerForStep(step),
 			Executable: executable,
 		}
 
@@ -69,7 +80,7 @@ func (r TestRunner) Run(isDebug bool, executable *executable.Executable) bool {
 		}
 
 		if err != nil {
-			r.reportTestError(err, isDebug, logger)
+			r.reportTestError(err, logger)
 		} else {
 			logger.Successf("Test passed.")
 		}
@@ -84,19 +95,26 @@ func (r TestRunner) Run(isDebug bool, executable *executable.Executable) bool {
 	return true
 }
 
-func (r TestRunner) getLoggerForStep(isDebug bool, step TestRunnerStep) *logger.Logger {
+func (r TestRunner) getExecutable() *executable.Executable {
 	if r.isQuiet {
-		return logger.GetQuietLogger("")
+		return executable.NewExecutable(r.executablePath)
 	} else {
-		return logger.GetLogger(isDebug, fmt.Sprintf("[%s] ", step.TesterLogPrefix))
+		return executable.NewVerboseExecutable(r.executablePath, logger.GetLogger(true, "[your_program] ").Plainln)
 	}
 }
 
+func (r TestRunner) getLoggerForStep(step TestRunnerStep) *logger.Logger {
+	if r.isQuiet {
+		return logger.GetQuietLogger("")
+	} else {
+		return logger.GetLogger(r.isDebug, fmt.Sprintf("[%s] ", step.TesterLogPrefix))
+	}
+}
 
-func (r TestRunner) reportTestError(err error, isDebug bool, logger *logger.Logger) {
+func (r TestRunner) reportTestError(err error, logger *logger.Logger) {
 	logger.Errorf("%s", err)
 
-	if isDebug {
+	if r.isDebug {
 		logger.Errorf("Test failed")
 	} else {
 		logger.Errorf("Test failed " +

@@ -3,8 +3,6 @@ package tester_utils
 import (
 	"fmt"
 
-	"github.com/codecrafters-io/tester-utils/executable"
-	"github.com/codecrafters-io/tester-utils/logger"
 	"github.com/codecrafters-io/tester-utils/random"
 	"github.com/codecrafters-io/tester-utils/test_runner"
 	"github.com/codecrafters-io/tester-utils/tester_context"
@@ -67,12 +65,12 @@ func (tester Tester) printDebugContext() {
 // runAntiCheatStages runs any anti-cheat stages specified in the TesterDefinition. Only critical logs are emitted. If
 // the stages pass, the user won't see any visible output.
 func (tester Tester) runAntiCheatStages() bool {
-	return tester.getAntiCheatRunner().Run(false, tester.getQuietExecutable())
+	return tester.getAntiCheatRunner().Run()
 }
 
 // runStages runs all the stages upto the current stage the user is attempting. Returns true if all stages pass.
 func (tester Tester) runStages() bool {
-	return tester.getRunner().Run(tester.context.IsDebug, tester.getExecutable())
+	return tester.getRunner().Run()
 }
 
 func (tester Tester) getRunner() test_runner.TestRunner {
@@ -88,7 +86,7 @@ func (tester Tester) getRunner() test_runner.TestRunner {
 		})
 	}
 
-	return test_runner.NewTestRunner(steps)
+	return test_runner.NewTestRunner(steps, tester.context.IsDebug, tester.context.ExecutablePath)
 }
 
 func (tester Tester) getAntiCheatRunner() test_runner.TestRunner {
@@ -102,15 +100,8 @@ func (tester Tester) getAntiCheatRunner() test_runner.TestRunner {
 		})
 	}
 
-	return test_runner.NewQuietTestRunner(steps) // We only want Critical logs to be emitted for anti-cheat tests
-}
-
-func (tester Tester) getQuietExecutable() *executable.Executable {
-	return executable.NewExecutable(tester.context.ExecutablePath)
-}
-
-func (tester Tester) getExecutable() *executable.Executable {
-	return executable.NewVerboseExecutable(tester.context.ExecutablePath, logger.GetLogger(true, "[your_program] ").Plainln)
+	// We only want Critical logs to be emitted for anti-cheat tests
+	return test_runner.NewQuietTestRunner(steps, tester.context.ExecutablePath)
 }
 
 func (tester Tester) validateContext() error {
