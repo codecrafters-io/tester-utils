@@ -2,6 +2,8 @@ package test_runner
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"time"
 
 	"github.com/codecrafters-io/tester-utils/logger"
@@ -19,6 +21,26 @@ func NewTestRunnerWorker(testRunner TestRunner, step TestRunnerStep) *TestRunner
 		TestRunner: testRunner,
 		Step:       step,
 	}
+}
+
+func (w *TestRunnerWorker) RunProcess(shouldStreamOutput bool) error {
+	command := exec.Command(w.TestRunner.TesterContext.TesterExecutablePath)
+	command.Env = os.Environ()
+	command.Env = append(command.Env, "CODECRAFTERS_IS_WORKER_PROCESS=true")
+	command.Env = append(command.Env, fmt.Sprintf("CODECRAFTERS_WORKER_PROCESS_STEP_SLUG=%s", w.Step.TestCase.Slug))
+
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+
+	// if shouldStreamOutput {
+	// 	command.Stdout = os.Stdout
+	// 	command.Stderr = os.Stderr
+	// } else {
+	// 	command.Stdout = io.Discard
+	// 	command.Stderr = io.Discard
+	// }
+
+	return command.Run()
 }
 
 func (w *TestRunnerWorker) Run() bool {
@@ -58,9 +80,9 @@ func (w *TestRunnerWorker) Run() bool {
 }
 
 func (w *TestRunnerWorker) GetLogger() *logger.Logger {
-	if w.TestRunner.isQuiet {
+	if w.TestRunner.IsQuiet {
 		return logger.GetQuietLogger("")
 	} else {
-		return logger.GetLogger(w.TestRunner.isDebug, fmt.Sprintf("[%s] ", w.Step.TesterLogPrefix))
+		return logger.GetLogger(w.TestRunner.TesterContext.IsDebug, fmt.Sprintf("[%s] ", w.Step.TesterLogPrefix))
 	}
 }

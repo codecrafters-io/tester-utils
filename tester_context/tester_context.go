@@ -25,11 +25,15 @@ type TesterContextTestCase struct {
 type TesterContext struct {
 	ExecutablePath               string
 	IsDebug                      bool
-	TestCases                    []TesterContextTestCase
 	ShouldSkipAntiCheatTestCases bool
+	TestCases                    []TesterContextTestCase
+	TesterExecutablePath         string
 
-	// IsForkedProcessForTestCase is true if the tester is running in a forked process for a stage test
-	IsForkedProcessForTestRunnerStep bool
+	// IsWorkerProcess is true if the tester is running in a forked process for a test runner step
+	IsWorkerProcess bool
+
+	// WorkerProcessStepSlug is the slug of the test case that the worker process should run
+	WorkerProcessStepSlug string
 }
 
 type yamlConfig struct {
@@ -47,8 +51,22 @@ func GetTesterContext(env map[string]string, executableFileName string) (TesterC
 		return TesterContext{}, fmt.Errorf("CODECRAFTERS_SUBMISSION_DIR env var not found")
 	}
 
-	isForkedProcessForTestRunnerStepStr, ok := env["CODECRAFTERS_IS_FORKED_PROCESS_FOR_TEST_RUNNER_STEP"]
-	isForkedProcessForTestRunnerStep := ok && isForkedProcessForTestRunnerStepStr == "true"
+	codecraftersTesterExecutablePath, ok := env["CODECRAFTERS_TESTER_EXECUTABLE_PATH"]
+	if !ok {
+		return TesterContext{}, fmt.Errorf("CODECRAFTERS_TESTER_EXECUTABLE_PATH env var not found")
+	}
+
+	isWorkerProcessStr, ok := env["CODECRAFTERS_IS_WORKER_PROCESS"]
+	isWorkerProcess := ok && isWorkerProcessStr == "true"
+
+	workerProcessStepSlug := ""
+
+	if isWorkerProcess {
+		workerProcessStepSlug, ok = env["CODECRAFTERS_WORKER_PROCESS_STEP_SLUG"]
+		if !ok {
+			panic("CODECRAFTERS_WORKER_PROCESS_STEP_SLUG env var not found")
+		}
+	}
 
 	testCasesJson, ok := env["CODECRAFTERS_TEST_CASES_JSON"]
 	if !ok {
@@ -96,11 +114,13 @@ func GetTesterContext(env map[string]string, executableFileName string) (TesterC
 	// TODO: test if executable exists?
 
 	return TesterContext{
-		ExecutablePath:                   executablePath,
-		IsDebug:                          yamlConfig.Debug,
-		TestCases:                        testCases,
-		ShouldSkipAntiCheatTestCases:     shouldSkipAntiCheatTestCases,
-		IsForkedProcessForTestRunnerStep: isForkedProcessForTestRunnerStep,
+		ExecutablePath:               executablePath,
+		IsDebug:                      yamlConfig.Debug,
+		IsWorkerProcess:              isWorkerProcess,
+		ShouldSkipAntiCheatTestCases: shouldSkipAntiCheatTestCases,
+		TestCases:                    testCases,
+		TesterExecutablePath:         codecraftersTesterExecutablePath,
+		WorkerProcessStepSlug:        workerProcessStepSlug,
 	}, nil
 }
 

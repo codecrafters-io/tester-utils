@@ -37,15 +37,17 @@ func NewTester(env map[string]string, definition tester_definition.TesterDefinit
 // RunCLI executes the tester based on user-provided env vars
 func (tester Tester) RunCLI() int {
 	random.Init()
+
+	if tester.context.IsWorkerProcess {
+		step := tester.getRunner().GetStepBySlug(tester.context.WorkerProcessStepSlug)
+		return tester.getRunner().RunStepAsWorker(step)
+	}
+
 	tester.printDebugContext()
 
 	// TODO: Validate context here instead of in NewTester?
 
 	if !tester.runStages() {
-		return 1
-	}
-
-	if !tester.context.ShouldSkipAntiCheatTestCases && !tester.runAntiCheatStages() {
 		return 1
 	}
 
@@ -62,46 +64,34 @@ func (tester Tester) printDebugContext() {
 	fmt.Println("")
 }
 
-// runAntiCheatStages runs any anti-cheat stages specified in the TesterDefinition. Only critical logs are emitted. If
-// the stages pass, the user won't see any visible output.
-func (tester Tester) runAntiCheatStages() bool {
-	return tester.getAntiCheatRunner().Run()
-}
-
 // runStages runs all the stages upto the current stage the user is attempting. Returns true if all stages pass.
 func (tester Tester) runStages() bool {
 	return tester.getRunner().Run()
 }
 
 func (tester Tester) getRunner() test_runner.TestRunner {
+	return test_runner.NewTestRunner(tester.getRunnerSteps(), tester.context)
+}
+
+func (tester Tester) getRunnerSteps() []test_runner.TestRunnerStep {
 	steps := []test_runner.TestRunnerStep{}
 
 	for _, testerContextTestCase := range tester.context.TestCases {
 		definitionTestCase := tester.definition.TestCaseBySlug(testerContextTestCase.Slug)
-
-		steps = append(steps, test_runner.TestRunnerStep{
-			TestCase:        definitionTestCase,
-			TesterLogPrefix: testerContextTestCase.TesterLogPrefix,
-			Title:           testerContextTestCase.Title,
-		})
+		steps = append(steps, test_runner.NewTestRunnerStepFromTestCase(definitionTestCase, testerContextTestCase))
 	}
 
-	return test_runner.NewTestRunner(steps, tester.context.IsDebug, tester.context.ExecutablePath)
-}
-
-func (tester Tester) getAntiCheatRunner() test_runner.TestRunner {
-	steps := []test_runner.TestRunnerStep{}
-
-	for index, testCase := range tester.definition.AntiCheatTestCases {
-		steps = append(steps, test_runner.TestRunnerStep{
-			TestCase:        testCase,
-			TesterLogPrefix: fmt.Sprintf("ac-%d", index+1),
-			Title:           fmt.Sprintf("AC%d", index+1),
-		})
+	if !tester.context.ShouldSkipAntiCheatTestCases {
+		for index, testCase := range tester.definition.AntiCheatTestCases {
+			steps = append(steps, test_runner.TestRunnerStep{
+				TestCase:        testCase,
+				TesterLogPrefix: fmt.Sprintf("ac-%d", index+1),
+				Title:           fmt.Sprintf("AC%d", index+1),
+			})
+		}
 	}
 
-	// We only want Critical logs to be emitted for anti-cheat tests
-	return test_runner.NewQuietTestRunner(steps, tester.context.ExecutablePath)
+	return steps
 }
 
 func (tester Tester) validateContext() error {

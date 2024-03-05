@@ -1,8 +1,11 @@
 package test_runner
 
 import (
+	"fmt"
+
 	"github.com/codecrafters-io/tester-utils/executable"
 	"github.com/codecrafters-io/tester-utils/logger"
+	"github.com/codecrafters-io/tester-utils/tester_context"
 	"github.com/codecrafters-io/tester-utils/tester_definition"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,26 +23,31 @@ type TestRunnerStep struct {
 
 // testRunner is used to run multiple tests
 type TestRunner struct {
-	executablePath string // executablePath is defined in the TesterDefinition and passed in here
-	isDebug        bool   // isDebug is fetched from the user's codecrafters.yml file
-	isQuiet        bool   // Used for anti-cheat tests, where we only want Critical logs to be emitted
-	steps          []TestRunnerStep
+	TesterContext tester_context.TesterContext
+	IsQuiet       bool // Used for anti-cheat tests, where we only want Critical logs to be emitted
+	Steps         []TestRunnerStep
 }
 
-func NewTestRunner(steps []TestRunnerStep, isDebug bool, executablePath string) TestRunner {
-	return TestRunner{
-		isDebug:        isDebug,
-		executablePath: executablePath,
-		steps:          steps,
+func NewTestRunnerStepFromTestCase(testerDefinitionTestCase tester_definition.TestCase, testerContextTestCase tester_context.TesterContextTestCase) TestRunnerStep {
+	return TestRunnerStep{
+		TestCase:        testerDefinitionTestCase,
+		TesterLogPrefix: testerContextTestCase.TesterLogPrefix,
+		Title:           testerContextTestCase.Title,
 	}
 }
 
-func NewQuietTestRunner(steps []TestRunnerStep, executablePath string) TestRunner {
+func NewTestRunner(steps []TestRunnerStep, testerContext tester_context.TesterContext) TestRunner {
 	return TestRunner{
-		isQuiet:        true,
-		steps:          steps,
-		isDebug:        false,
-		executablePath: executablePath,
+		TesterContext: testerContext,
+		Steps:         steps,
+	}
+}
+
+func NewQuietTestRunner(steps []TestRunnerStep, testerContext tester_context.TesterContext) TestRunner {
+	return TestRunner{
+		TesterContext: testerContext,
+		IsQuiet:       true,
+		Steps:         steps,
 	}
 }
 
@@ -48,24 +56,26 @@ func (r TestRunner) Run() bool {
 	workerGroup := new(errgroup.Group)
 	workerGroup.SetLimit(8)
 
-	failedStepsChannel := make(chan TestRunnerStep, len(r.steps))
-	passedStepsChannel := make(chan TestRunnerStep, len(r.steps))
+	failedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
+	passedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
 
-	for _, step := range r.steps {
+	for _, step := range r.Steps {
 		stepCopy := step
 
 		workerGroup.Go(func() error {
 			worker := NewTestRunnerWorker(r, stepCopy)
-			if worker.Run() {
-				passedStepsChannel <- stepCopy
-			} else {
+			fmt.Println("Running tests for", stepCopy.Title)
+			if err := worker.RunProcess(true); err != nil {
 				failedStepsChannel <- stepCopy
+			} else {
+				passedStepsChannel <- stepCopy
 			}
 
 			return nil
 		})
 	}
 
+	fmt.Println("Waiting for tests to finish...")
 	if err := workerGroup.Wait(); err != nil {
 		panic(err) // We're only using this for concurrency control
 	}
@@ -73,41 +83,62 @@ func (r TestRunner) Run() bool {
 	close(failedStepsChannel)
 	close(passedStepsChannel)
 
-	failedSteps := make([]TestRunnerStep, 0, len(r.steps))
+	failedSteps := make([]TestRunnerStep, 0, len(r.Steps))
 
 	for step := range failedStepsChannel {
 		failedSteps = append(failedSteps, step)
 	}
 
 	if len(failedSteps) > 0 {
+		fmt.Println("Some tests failed!")
 		return false
 	}
 
-	passedSteps := make([]TestRunnerStep, 0, len(r.steps))
+	passedSteps := make([]TestRunnerStep, 0, len(r.Steps))
 
 	for step := range passedStepsChannel {
 		passedSteps = append(passedSteps, step)
 	}
 
-	if len(passedSteps) != len(r.steps) {
+	if len(passedSteps) != len(r.Steps) {
 		panic("Some steps passed, but not all of them. This should never happen.")
 	}
 
 	return true
 }
 
+func (r TestRunner) RunStepAsWorker(step TestRunnerStep) (exitCode int) {
+	worker := NewTestRunnerWorker(r, step)
+
+	if worker.Run() {
+		return 0
+	}
+
+	return 1
+}
+
+func (r TestRunner) GetStepBySlug(slug string) TestRunnerStep {
+	for _, step := range r.Steps {
+		if step.TestCase.Slug == slug {
+			return step
+		}
+	}
+
+	panic("No step found with slug: " + slug)
+}
+
 func (r TestRunner) getExecutable() *executable.Executable {
-	if r.isQuiet {
-		return executable.NewExecutable(r.executablePath)
+	if r.IsQuiet {
+		return executable.NewExecutable(r.TesterContext.ExecutablePath)
 	} else {
-		return executable.NewVerboseExecutable(r.executablePath, logger.GetLogger(true, "[your_program] ").Plainln)
+		return executable.NewVerboseExecutable(r.TesterContext.ExecutablePath, logger.GetLogger(true, "[your_program] ").Plainln)
 	}
 }
 
 func (r TestRunner) reportTestError(err error, logger *logger.Logger) {
 	logger.Errorf("%s", err)
 
-	if r.isDebug {
+	if r.TesterContext.IsDebug {
 		logger.Errorf("Test failed")
 	} else {
 		logger.Errorf("Test failed " +
