@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/codecrafters-io/tester-utils/executable"
 	"github.com/codecrafters-io/tester-utils/logger"
 	"github.com/codecrafters-io/tester-utils/test_case_harness"
 )
@@ -15,6 +16,8 @@ import (
 type TestRunnerWorker struct {
 	TestRunner TestRunner
 	Step       TestRunnerStep
+
+	networkNamespaceName string
 }
 
 func NewTestRunnerWorker(testRunner TestRunner, step TestRunnerStep) *TestRunnerWorker {
@@ -24,8 +27,56 @@ func NewTestRunnerWorker(testRunner TestRunner, step TestRunnerStep) *TestRunner
 	}
 }
 
+func (w *TestRunnerWorker) CreateNetworkNamespace() error {
+	w.networkNamespaceName = fmt.Sprintf("test-ns-%d", time.Now().UnixNano())
+
+	result, err := executable.NewExecutable("ip").Run("netns", "add", w.networkNamespaceName)
+	if err != nil || result.ExitCode != 0 {
+		fmt.Println("Exit code:", result.ExitCode)
+		fmt.Println("Stdout:", string(result.Stdout))
+		fmt.Println("Stderr:", string(result.Stderr))
+		fmt.Println(err)
+		return err
+	}
+
+	result, err = executable.NewExecutable("ip").Run("netns", "exec", w.networkNamespaceName, "ip", "link", "set", "lo", "up")
+	if err != nil || result.ExitCode != 0 {
+		fmt.Println("Exit code:", result.ExitCode)
+		fmt.Println("Stdout:", string(result.Stdout))
+		fmt.Println("Stderr:", string(result.Stderr))
+		fmt.Println(err)
+		return err
+	}
+
+	fmt.Println("Created network namespace:", w.networkNamespaceName)
+
+	return nil
+}
+
+func (w *TestRunnerWorker) DestroyNetworkNamespace() error {
+	result, err := executable.NewExecutable("ip").Run("netns", "delete", w.networkNamespaceName)
+	if err != nil || result.ExitCode != 0 {
+		fmt.Println("Exit code:", result.ExitCode)
+		fmt.Println("Stdout:", string(result.Stdout))
+		fmt.Println("Stderr:", string(result.Stderr))
+		fmt.Println(err)
+		return err
+	}
+
+	fmt.Println("Destroyed network namespace:", w.networkNamespaceName)
+
+	return nil
+}
+
 func (w *TestRunnerWorker) RunProcess(shouldStreamOutput bool) error {
-	command := exec.Command(w.TestRunner.TesterContext.TesterExecutablePath)
+	if err := w.CreateNetworkNamespace(); err != nil {
+		panic(err)
+	}
+
+	defer w.DestroyNetworkNamespace()
+
+	command := exec.Command("ip", "netns", "exec", w.networkNamespaceName, w.TestRunner.TesterContext.TesterExecutablePath)
+
 	command.Env = os.Environ()
 	command.Env = append(command.Env, "CODECRAFTERS_IS_WORKER_PROCESS=true")
 	command.Env = append(command.Env, fmt.Sprintf("CODECRAFTERS_WORKER_PROCESS_STEP_SLUG=%s", w.Step.TestCase.Slug))

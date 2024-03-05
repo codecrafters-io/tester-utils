@@ -59,16 +59,16 @@ func (r TestRunner) Run() bool {
 	failedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
 	passedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
 
-	for index, step := range r.Steps {
+	for _, step := range r.Steps {
 		stepCopy := step
-		isLastStep := index == len(r.Steps)-1
+		// isLastStep := index == len(r.Steps)-1
 
 		workerGroup.Go(func() error {
 			worker := NewTestRunnerWorker(r, stepCopy)
 
 			fmt.Println("Running tests for", stepCopy.Title)
 
-			if err := worker.RunProcess(isLastStep); err != nil {
+			if err := worker.RunProcess(true); err != nil {
 				failedStepsChannel <- stepCopy
 			} else {
 				passedStepsChannel <- stepCopy
