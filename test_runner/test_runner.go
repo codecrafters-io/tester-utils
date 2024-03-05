@@ -2,12 +2,12 @@ package test_runner
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/codecrafters-io/tester-utils/executable"
 	"github.com/codecrafters-io/tester-utils/logger"
-	"github.com/codecrafters-io/tester-utils/test_case_harness"
+	"github.com/codecrafters-io/tester-utils/tester_context"
 	"github.com/codecrafters-io/tester-utils/tester_definition"
+	"golang.org/x/sync/errgroup"
 )
 
 type TestRunnerStep struct {
@@ -23,92 +23,132 @@ type TestRunnerStep struct {
 
 // testRunner is used to run multiple tests
 type TestRunner struct {
-	isQuiet bool // Used for anti-cheat tests, where we only want Critical logs to be emitted
-	steps   []TestRunnerStep
+	TesterContext tester_context.TesterContext
+	IsQuiet       bool // Used for anti-cheat tests, where we only want Critical logs to be emitted
+	Steps         []TestRunnerStep
 }
 
-func NewTestRunner(steps []TestRunnerStep) TestRunner {
-	return TestRunner{
-		steps: steps,
+func NewTestRunnerStepFromTestCase(testerDefinitionTestCase tester_definition.TestCase, testerContextTestCase tester_context.TesterContextTestCase) TestRunnerStep {
+	return TestRunnerStep{
+		TestCase:        testerDefinitionTestCase,
+		TesterLogPrefix: testerContextTestCase.TesterLogPrefix,
+		Title:           testerContextTestCase.Title,
 	}
 }
 
-func NewQuietTestRunner(steps []TestRunnerStep) TestRunner {
-	return TestRunner{isQuiet: true, steps: steps}
+func NewTestRunner(steps []TestRunnerStep, testerContext tester_context.TesterContext) TestRunner {
+	return TestRunner{
+		TesterContext: testerContext,
+		Steps:         steps,
+	}
+}
+
+func NewQuietTestRunner(steps []TestRunnerStep, testerContext tester_context.TesterContext) TestRunner {
+	return TestRunner{
+		TesterContext: testerContext,
+		IsQuiet:       true,
+		Steps:         steps,
+	}
 }
 
 // Run runs all tests in a stageRunner
-func (r TestRunner) Run(isDebug bool, executable *executable.Executable) bool {
-	for index, step := range r.steps {
-		if index != 0 {
-			fmt.Println("")
-		}
+func (r TestRunner) Run() bool {
+	workerGroup := new(errgroup.Group)
+	workerGroup.SetLimit(8)
 
-		testCaseHarness := test_case_harness.TestCaseHarness{
-			Logger:     r.getLoggerForStep(isDebug, step),
-			Executable: executable,
-		}
+	failedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
+	passedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
 
-		logger := testCaseHarness.Logger
-		logger.Infof("Running tests for %s", step.Title)
+	for index, step := range r.Steps {
+		stepCopy := step
+		isLastStep := index == len(r.Steps)-1
 
-		stepResultChannel := make(chan error, 1)
-		go func() {
-			err := step.TestCase.TestFunc(&testCaseHarness)
-			stepResultChannel <- err
-		}()
+		workerGroup.Go(func() error {
+			worker := NewTestRunnerWorker(r, stepCopy)
 
-		timeout := step.TestCase.CustomOrDefaultTimeout()
+			fmt.Println("Running tests for", stepCopy.Title)
 
-		var err error
-		select {
-		case stageErr := <-stepResultChannel:
-			err = stageErr
-		case <-time.After(timeout):
-			err = fmt.Errorf("timed out, test exceeded %d seconds", int64(timeout.Seconds()))
-		}
+			if err := worker.RunProcess(isLastStep); err != nil {
+				failedStepsChannel <- stepCopy
+			} else {
+				passedStepsChannel <- stepCopy
+			}
 
-		if err != nil {
-			r.reportTestError(err, isDebug, logger)
-		} else {
-			logger.Successf("Test passed.")
-		}
+			return nil
+		})
+	}
 
-		testCaseHarness.RunTeardownFuncs()
+	fmt.Println("Waiting for tests to finish...")
+	if err := workerGroup.Wait(); err != nil {
+		panic(err) // We're only using this for concurrency control
+	}
 
-		if err != nil {
-			return false
-		}
+	close(failedStepsChannel)
+	close(passedStepsChannel)
+
+	logger := logger.GetLogger(r.TesterContext.IsDebug, "[tester] ")
+	fmt.Println("")
+
+	passedSteps := make([]TestRunnerStep, 0, len(r.Steps))
+
+	for step := range passedStepsChannel {
+		passedSteps = append(passedSteps, step)
+		logger.Successf("Test passed: %s", step.Title)
+	}
+
+	failedSteps := make([]TestRunnerStep, 0, len(r.Steps))
+
+	for step := range failedStepsChannel {
+		failedSteps = append(failedSteps, step)
+		logger.Errorf("Test failed: %s", step.Title)
+	}
+
+	if len(failedSteps) > 0 {
+		return false
+	}
+
+	if len(passedSteps) != len(r.Steps) {
+		panic("Some steps passed, but not all of them. This should never happen.")
 	}
 
 	return true
 }
 
-func (r TestRunner) getLoggerForStep(isDebug bool, step TestRunnerStep) *logger.Logger {
-	if r.isQuiet {
-		return logger.GetQuietLogger("")
+func (r TestRunner) RunStepAsWorker(step TestRunnerStep) (exitCode int) {
+	worker := NewTestRunnerWorker(r, step)
+
+	if worker.Run() {
+		return 0
+	}
+
+	return 1
+}
+
+func (r TestRunner) GetStepBySlug(slug string) TestRunnerStep {
+	for _, step := range r.Steps {
+		if step.TestCase.Slug == slug {
+			return step
+		}
+	}
+
+	panic("No step found with slug: " + slug)
+}
+
+func (r TestRunner) getExecutable() *executable.Executable {
+	if r.IsQuiet {
+		return executable.NewExecutable(r.TesterContext.ExecutablePath)
 	} else {
-		return logger.GetLogger(isDebug, fmt.Sprintf("[%s] ", step.TesterLogPrefix))
+		return executable.NewVerboseExecutable(r.TesterContext.ExecutablePath, logger.GetLogger(true, "[your_program] ").Plainln)
 	}
 }
 
-
-func (r TestRunner) reportTestError(err error, isDebug bool, logger *logger.Logger) {
+func (r TestRunner) reportTestError(err error, logger *logger.Logger) {
 	logger.Errorf("%s", err)
 
-	if isDebug {
+	if r.TesterContext.IsDebug {
 		logger.Errorf("Test failed")
 	} else {
 		logger.Errorf("Test failed " +
 			"(try setting 'debug: true' in your codecrafters.yml to see more details)")
 	}
-}
-
-// Fuck you, go
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-
-	return b
 }
