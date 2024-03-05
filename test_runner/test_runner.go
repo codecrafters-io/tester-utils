@@ -59,13 +59,16 @@ func (r TestRunner) Run() bool {
 	failedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
 	passedStepsChannel := make(chan TestRunnerStep, len(r.Steps))
 
-	for _, step := range r.Steps {
+	for index, step := range r.Steps {
 		stepCopy := step
+		isLastStep := index == len(r.Steps)-1
 
 		workerGroup.Go(func() error {
 			worker := NewTestRunnerWorker(r, stepCopy)
+
 			fmt.Println("Running tests for", stepCopy.Title)
-			if err := worker.RunProcess(true); err != nil {
+
+			if err := worker.RunProcess(isLastStep); err != nil {
 				failedStepsChannel <- stepCopy
 			} else {
 				passedStepsChannel <- stepCopy
@@ -83,21 +86,25 @@ func (r TestRunner) Run() bool {
 	close(failedStepsChannel)
 	close(passedStepsChannel)
 
-	failedSteps := make([]TestRunnerStep, 0, len(r.Steps))
-
-	for step := range failedStepsChannel {
-		failedSteps = append(failedSteps, step)
-	}
-
-	if len(failedSteps) > 0 {
-		fmt.Println("Some tests failed!")
-		return false
-	}
+	logger := logger.GetLogger(r.TesterContext.IsDebug, "[tester] ")
+	fmt.Println("")
 
 	passedSteps := make([]TestRunnerStep, 0, len(r.Steps))
 
 	for step := range passedStepsChannel {
 		passedSteps = append(passedSteps, step)
+		logger.Successf("Test passed: %s", step.Title)
+	}
+
+	failedSteps := make([]TestRunnerStep, 0, len(r.Steps))
+
+	for step := range failedStepsChannel {
+		failedSteps = append(failedSteps, step)
+		logger.Errorf("Test failed: %s", step.Title)
+	}
+
+	if len(failedSteps) > 0 {
+		return false
 	}
 
 	if len(passedSteps) != len(r.Steps) {

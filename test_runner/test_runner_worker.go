@@ -2,6 +2,7 @@ package test_runner
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -29,16 +30,13 @@ func (w *TestRunnerWorker) RunProcess(shouldStreamOutput bool) error {
 	command.Env = append(command.Env, "CODECRAFTERS_IS_WORKER_PROCESS=true")
 	command.Env = append(command.Env, fmt.Sprintf("CODECRAFTERS_WORKER_PROCESS_STEP_SLUG=%s", w.Step.TestCase.Slug))
 
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-
-	// if shouldStreamOutput {
-	// 	command.Stdout = os.Stdout
-	// 	command.Stderr = os.Stderr
-	// } else {
-	// 	command.Stdout = io.Discard
-	// 	command.Stderr = io.Discard
-	// }
+	if shouldStreamOutput {
+		command.Stdout = os.Stdout
+		command.Stderr = os.Stderr
+	} else {
+		command.Stdout = io.Discard
+		command.Stderr = io.Discard
+	}
 
 	return command.Run()
 }
