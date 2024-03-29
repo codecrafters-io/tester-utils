@@ -263,9 +263,13 @@ func (e *Executable) Kill() error {
 	doneChannel := make(chan error, 1)
 
 	go func() {
-		syscall.Kill(e.cmd.Process.Pid, syscall.SIGTERM)  // Don't know if this is required
-		syscall.Kill(-e.cmd.Process.Pid, syscall.SIGTERM) // Kill the whole process group
-		_, err := e.Wait()
+		processExists := e.cmd.Process.Signal(syscall.Signal(0))
+		var err error
+		if processExists != nil {
+			syscall.Kill(e.cmd.Process.Pid, syscall.SIGTERM)  // Don't know if this is required
+			syscall.Kill(-e.cmd.Process.Pid, syscall.SIGTERM) // Kill the whole process group
+			_, err = e.Wait()
+		}
 		doneChannel <- err
 	}()
 
@@ -275,8 +279,12 @@ func (e *Executable) Kill() error {
 		err = doneError
 	case <-time.After(2 * time.Second):
 		err = fmt.Errorf("program failed to exit in 2 seconds after receiving sigterm")
-		syscall.Kill(e.cmd.Process.Pid, syscall.SIGKILL)  // Don't know if this is required
-		syscall.Kill(-e.cmd.Process.Pid, syscall.SIGKILL) // Kill the whole process group
+		// _, err := os.FindProcess(e.cmd.Process.Pid)
+		processExists := e.cmd.Process.Signal(syscall.Signal(0))
+		if processExists == nil {
+			syscall.Kill(e.cmd.Process.Pid, syscall.SIGKILL)  // Don't know if this is required
+			syscall.Kill(-e.cmd.Process.Pid, syscall.SIGKILL) // Kill the whole process group
+		}
 
 		<-doneChannel // Wait for Wait() to return
 	}
