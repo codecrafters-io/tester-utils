@@ -82,12 +82,12 @@ func shuffle(vals []string, n int) []string {
 	return ret
 }
 
-func RandomSelection(count int, characters []string) []string {
+func RandomSelection(count int, characters []string, joinWith string) string {
 	selectedCharacters := make([]string, count)
 	for i := 0; i < count; i++ {
 		selectedCharacters[i] = characters[rand.Intn(len(characters))]
 	}
-	return selectedCharacters
+	return strings.Join(selectedCharacters, joinWith)
 }
 
 func RandomStringFromCharacters(totalLength int, characters []string) string {
