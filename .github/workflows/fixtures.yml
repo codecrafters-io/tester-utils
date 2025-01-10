@@ -41,8 +41,7 @@ jobs:
           labels: regenerate-fixtures
           
       - name: Set up prerequisites (interpreter)
-        if: inputs.tester_repo == 'interpreter-tester'
-        uses: codecrafters-io/codecrafters-action/.github/actions/interpreter-setup@b7d515cea86f1815ce74c6eeb0cb15fb458eda88
+        run: make setup
 
       - name: Set up prerequisites (redis)
         if: inputs.tester_repo == 'redis-tester'

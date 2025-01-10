@@ -10,3 +10,6 @@ test:
 
 test_and_watch:
 	onchange '**/*' -- go test -v ./...
+
+setup:
+	echo "Setup in tester-utils"
