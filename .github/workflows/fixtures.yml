@@ -40,12 +40,13 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           labels: regenerate-fixtures
           
-      - name: Set up prerequisites (interpreter)
-        run: make setup
-
-      - name: Set up prerequisites (redis)
-        if: inputs.tester_repo == 'redis-tester'
-        uses: codecrafters-io/codecrafters-action/.github/actions/redis-setup@ef5aeb9504e08cccfe71e1dbcf806fab3738019d
+      - name: Set up prerequisites
+        run: |
+          if grep -q "^setup:" Makefile; then
+            make setup
+          else
+            echo "No setup target found in Makefile, skipping..."
+          fi
 
       - name: Setup git config
         run: |
