@@ -127,7 +127,7 @@ func (e *Executable) Start(args ...string) error {
 
 	// Check executable permission
 	if fileInfo.Mode().Perm()&0111 == 0 || fileInfo.IsDir() {
-		return fmt.Errorf("%s is not an executable file", e.Path)
+		return fmt.Errorf("%s (resolved to %s) is not an executable file", e.Path, absolutePath)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.TimeoutInMilliseconds)*time.Millisecond)
