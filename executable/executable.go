@@ -28,6 +28,8 @@ type Executable struct {
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
 
+	Process *os.Process
+
 	StdinPipe io.WriteCloser
 
 	// These are set & removed together
@@ -161,6 +163,11 @@ func (e *Executable) Start(args ...string) error {
 		return err
 	}
 	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	e.Process, err = os.FindProcess(cmd.Process.Pid)
 	if err != nil {
 		return err
 	}
