@@ -79,16 +79,18 @@ func GetTesterContext(env map[string]string, definition tester_definition.Tester
 	}
 
 	newExecutablePath := path.Join(submissionDir, definition.ExecutableFileName)
-	legacyExecutablePath := path.Join(submissionDir, definition.LegacyExecutableFileName)
-
 	executablePath := newExecutablePath
 
-	_, newExecutablePathErr := os.Stat(newExecutablePath)
-	_, legacyExecutablePathErr := os.Stat(legacyExecutablePath)
+	if definition.LegacyExecutableFileName != "" {
+		_, newExecutablePathErr := os.Stat(newExecutablePath)
+		legacyExecutablePath := path.Join(submissionDir, definition.LegacyExecutableFileName)
 
-	// Only use legacyExecutablePath if the legacy file is present AND new file isn't
-	if legacyExecutablePathErr == nil && errors.Is(newExecutablePathErr, os.ErrNotExist) {
-		executablePath = legacyExecutablePath
+		_, legacyExecutablePathErr := os.Stat(legacyExecutablePath)
+
+		// Only use legacyExecutablePath if the legacy file is present AND new file isn't
+		if legacyExecutablePathErr == nil && errors.Is(newExecutablePathErr, os.ErrNotExist) {
+			executablePath = legacyExecutablePath
+		}
 	}
 
 	configPath := path.Join(submissionDir, "codecrafters.yml")
