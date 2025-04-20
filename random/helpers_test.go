@@ -1,7 +1,6 @@
 package random
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -46,7 +45,7 @@ func TestRandomInt(t *testing.T) {
 
 	t.Run("returns values within the range", func(t *testing.T) {
 		min, max := 10, 20
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			val := RandomInt(min, max)
 			assert.GreaterOrEqual(t, val, min)
 			assert.Less(t, val, max)
@@ -56,7 +55,7 @@ func TestRandomInt(t *testing.T) {
 	t.Run("can produce values at min boundary", func(t *testing.T) {
 		// Run enough times to likely hit the minimum
 		found := false
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			if RandomInt(5, 10) == 5 {
 				found = true
 				break
@@ -66,7 +65,7 @@ func TestRandomInt(t *testing.T) {
 	})
 
 	t.Run("never produces values at max boundary", func(t *testing.T) {
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			assert.NotEqual(t, 10, RandomInt(5, 10))
 		}
 	})
@@ -84,9 +83,7 @@ func TestRandomUniqueInts(t *testing.T) {
 	t.Run("returns all possible values when count equals the range", func(t *testing.T) {
 		result := RandomInts(0, 100, 100)
 		expected := make([]int, 100)
-		// TODO
-		// for i := range 100 {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			expected[i] = i
 		}
 		assert.ElementsMatch(t, expected, result)
@@ -122,7 +119,7 @@ func TestRandomWord(t *testing.T) {
 
 		// Generate a bunch of words and verify we get at least 2 different ones
 		seen := make(map[string]bool)
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			seen[RandomWord()] = true
 			if len(seen) >= 2 {
 				break
@@ -245,24 +242,19 @@ func TestRandomElementsFromArray(t *testing.T) {
 	})
 }
 
-func ExampleRandomInt() {
+func TestSeededRandomInt(t *testing.T) {
 	os.Setenv("CODECRAFTERS_RANDOM_SEED", "42")
 	defer os.Unsetenv("CODECRAFTERS_RANDOM_SEED")
 	Init()
 
-	fmt.Println(RandomInt(1, 10))
-	fmt.Println(RandomInt(1, 100))
-	// Output:
-	// 9
-	// 54
+	assert.Equal(t, RandomInt(1, 10), 9)
+	assert.Equal(t, RandomInt(1, 100), 54)
 }
 
-func ExampleRandomString() {
+func TestSeededRandomString(t *testing.T) {
 	os.Setenv("CODECRAFTERS_RANDOM_SEED", "42")
 	defer os.Unsetenv("CODECRAFTERS_RANDOM_SEED")
 	Init()
 
-	fmt.Println(RandomString())
-	// Output:
-	// strawberry pineapple raspberry blueberry banana orange
+	assert.Equal(t, RandomString(), "strawberry pineapple raspberry blueberry banana orange")
 }
