@@ -73,7 +73,7 @@ type Logger struct {
 func GetLogger(isDebug bool, prefix string) *Logger {
 	color.NoColor = false
 
-	coloredPrefix := yellowColorize(prefix)[0]
+	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
 		logger:  *log.New(os.Stdout, coloredPrefix, 0),
 		IsDebug: isDebug,
@@ -89,10 +89,10 @@ func (l *Logger) UpdateSecondaryPrefix(prefix string) {
 	l.secondaryPrefix = prefix
 	if prefix == "" {
 		// Reset the prefix to the original one.
-		l.logger.SetPrefix(yellowColorize(l.prefix)[0])
+		l.logger.SetPrefix(yellowColorize("%s", l.prefix)[0])
 	} else {
 		// Append the secondary prefix to the original one.
-		l.logger.SetPrefix(yellowColorize(l.prefix + fmt.Sprintf("[%s] ", prefix))[0])
+		l.logger.SetPrefix(yellowColorize("%s", l.prefix+fmt.Sprintf("[%s] ", prefix))[0])
 	}
 }
 
@@ -104,7 +104,7 @@ func (l *Logger) ResetSecondaryPrefix() {
 func GetQuietLogger(prefix string) *Logger {
 	color.NoColor = false
 
-	coloredPrefix := yellowColorize(prefix)[0]
+	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
 		logger:  *log.New(os.Stdout, coloredPrefix, 0),
 		IsDebug: false,
@@ -127,7 +127,7 @@ func (l *Logger) Successln(msg string) {
 	if l.IsQuiet {
 		return
 	}
-	for _, line := range successColorize(msg) {
+	for _, line := range successColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
@@ -147,7 +147,7 @@ func (l *Logger) Infoln(msg string) {
 		return
 	}
 
-	for _, line := range infoColorize(msg) {
+	for _, line := range infoColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
@@ -169,7 +169,7 @@ func (l *Logger) Criticalln(msg string) {
 		panic("Critical is only for quiet loggers")
 	}
 
-	for _, line := range errorColorize(msg) {
+	for _, line := range errorColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
@@ -189,7 +189,7 @@ func (l *Logger) Errorln(msg string) {
 		return
 	}
 
-	for _, line := range errorColorize(msg) {
+	for _, line := range errorColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
@@ -209,7 +209,7 @@ func (l *Logger) Debugln(msg string) {
 		return
 	}
 
-	for _, line := range debugColorize(msg) {
+	for _, line := range debugColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
@@ -217,13 +217,13 @@ func (l *Logger) Debugln(msg string) {
 func (l *Logger) Plainf(fstring string, args ...any) {
 	formattedString := fmt.Sprintf(fstring, args...)
 
-	for line := range strings.SplitSeq(formattedString, "\n") {
+	for line := range strings.Split(formattedString, "\n") {
 		l.logger.Println(line)
 	}
 }
 
 func (l *Logger) Plainln(msg string) {
-	lines := strings.SplitSeq(msg, "\n")
+	lines := strings.Split(msg, "\n")
 
 	for line := range lines {
 		l.logger.Println(line)
