@@ -9,8 +9,15 @@ import (
 	"github.com/fatih/color"
 )
 
-func colorize(colorToUse color.Attribute, fstring string, args ...interface{}) []string {
-	msg := fmt.Sprintf(fstring, args...)
+func colorize(colorToUse color.Attribute, fstring string, args ...any) []string {
+	var msg string
+
+	if len(args) == 0 {
+		msg = fstring // Treat as plain string if no args
+	} else {
+		msg = fmt.Sprintf(fstring, args...) // Format if args are present
+	}
+
 	lines := strings.Split(msg, "\n")
 	colorizedLines := make([]string, len(lines))
 
@@ -21,23 +28,23 @@ func colorize(colorToUse color.Attribute, fstring string, args ...interface{}) [
 	return colorizedLines
 }
 
-func debugColorize(fstring string, args ...interface{}) []string {
+func debugColorize(fstring string, args ...any) []string {
 	return colorize(color.FgCyan, fstring, args...)
 }
 
-func infoColorize(fstring string, args ...interface{}) []string {
+func infoColorize(fstring string, args ...any) []string {
 	return colorize(color.FgHiBlue, fstring, args...)
 }
 
-func successColorize(fstring string, args ...interface{}) []string {
+func successColorize(fstring string, args ...any) []string {
 	return colorize(color.FgHiGreen, fstring, args...)
 }
 
-func errorColorize(fstring string, args ...interface{}) []string {
+func errorColorize(fstring string, args ...any) []string {
 	return colorize(color.FgHiRed, fstring, args...)
 }
 
-func yellowColorize(fstring string, args ...interface{}) []string {
+func yellowColorize(fstring string, args ...any) []string {
 	return colorize(color.FgYellow, fstring, args...)
 }
 
@@ -106,7 +113,7 @@ func GetQuietLogger(prefix string) *Logger {
 	}
 }
 
-func (l *Logger) Successf(fstring string, args ...interface{}) {
+func (l *Logger) Successf(fstring string, args ...any) {
 	if l.IsQuiet {
 		return
 	}
@@ -125,7 +132,7 @@ func (l *Logger) Successln(msg string) {
 	}
 }
 
-func (l *Logger) Infof(fstring string, args ...interface{}) {
+func (l *Logger) Infof(fstring string, args ...any) {
 	if l.IsQuiet {
 		return
 	}
@@ -146,7 +153,7 @@ func (l *Logger) Infoln(msg string) {
 }
 
 // Criticalf is to be used only in anti-cheat stages
-func (l *Logger) Criticalf(fstring string, args ...interface{}) {
+func (l *Logger) Criticalf(fstring string, args ...any) {
 	if !l.IsQuiet {
 		panic("Critical is only for quiet loggers")
 	}
@@ -167,7 +174,7 @@ func (l *Logger) Criticalln(msg string) {
 	}
 }
 
-func (l *Logger) Errorf(fstring string, args ...interface{}) {
+func (l *Logger) Errorf(fstring string, args ...any) {
 	if l.IsQuiet {
 		return
 	}
@@ -187,7 +194,7 @@ func (l *Logger) Errorln(msg string) {
 	}
 }
 
-func (l *Logger) Debugf(fstring string, args ...interface{}) {
+func (l *Logger) Debugf(fstring string, args ...any) {
 	if !l.IsDebug {
 		return
 	}
@@ -207,18 +214,18 @@ func (l *Logger) Debugln(msg string) {
 	}
 }
 
-func (l *Logger) Plainf(fstring string, args ...interface{}) {
+func (l *Logger) Plainf(fstring string, args ...any) {
 	formattedString := fmt.Sprintf(fstring, args...)
 
-	for _, line := range strings.Split(formattedString, "\n") {
+	for line := range strings.SplitSeq(formattedString, "\n") {
 		l.logger.Println(line)
 	}
 }
 
 func (l *Logger) Plainln(msg string) {
-	lines := strings.Split(msg, "\n")
+	lines := strings.SplitSeq(msg, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		l.logger.Println(line)
 	}
 }
