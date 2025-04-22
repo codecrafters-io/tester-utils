@@ -22,7 +22,7 @@ func newTester(env map[string]string, definition tester_definition.TesterDefinit
 	context, err := tester_context.GetTesterContext(env, definition)
 	if err != nil {
 		if userError, ok := err.(*internal.UserError); ok {
-			return Tester{}, fmt.Errorf(userError.Message)
+			return Tester{}, fmt.Errorf("%s", userError.Message)
 		}
 
 		return Tester{}, fmt.Errorf("CodeCrafters internal error. Error fetching tester context: %v", err)
