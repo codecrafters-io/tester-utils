@@ -7,7 +7,7 @@
 name: Trigger Fixture Regeneration
 
 on:
-  workflow_call:  
+  workflow_call:
     inputs:
       tester_repo:
         description: "The repo to regenerate fixtures for"
@@ -39,7 +39,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           labels: regenerate-fixtures
-          
+
       - name: Set up prerequisites (interpreter)
         if: inputs.tester_repo == 'interpreter-tester'
         uses: codecrafters-io/codecrafters-action/.github/actions/interpreter-setup@b7d515cea86f1815ce74c6eeb0cb15fb458eda88
@@ -57,7 +57,7 @@ jobs:
           git checkout ${{ github.head_ref }}
 
       - name: Regenerate Fixtures
-        run: CODECRAFTERS_RECORD_FIXTURES=true make test 
+        run: CODECRAFTERS_RECORD_FIXTURES=true make test
 
       - name: Update Fixtures
         run: |
