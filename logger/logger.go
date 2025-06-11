@@ -9,8 +9,15 @@ import (
 	"github.com/fatih/color"
 )
 
-func colorize(colorToUse color.Attribute, fstring string, args ...interface{}) []string {
-	msg := fmt.Sprintf(fstring, args...)
+func colorize(colorToUse color.Attribute, fstring string, args ...any) []string {
+	var msg string
+
+	if len(args) == 0 {
+		msg = fstring // Treat as plain string if no args
+	} else {
+		msg = fmt.Sprintf(fstring, args...) // Format if args are present
+	}
+
 	lines := strings.Split(msg, "\n")
 	colorizedLines := make([]string, len(lines))
 
@@ -21,23 +28,23 @@ func colorize(colorToUse color.Attribute, fstring string, args ...interface{}) [
 	return colorizedLines
 }
 
-func debugColorize(fstring string, args ...interface{}) []string {
+func debugColorize(fstring string, args ...any) []string {
 	return colorize(color.FgCyan, fstring, args...)
 }
 
-func infoColorize(fstring string, args ...interface{}) []string {
+func infoColorize(fstring string, args ...any) []string {
 	return colorize(color.FgHiBlue, fstring, args...)
 }
 
-func successColorize(fstring string, args ...interface{}) []string {
+func successColorize(fstring string, args ...any) []string {
 	return colorize(color.FgHiGreen, fstring, args...)
 }
 
-func errorColorize(fstring string, args ...interface{}) []string {
+func errorColorize(fstring string, args ...any) []string {
 	return colorize(color.FgHiRed, fstring, args...)
 }
 
-func yellowColorize(fstring string, args ...interface{}) []string {
+func yellowColorize(fstring string, args ...any) []string {
 	return colorize(color.FgYellow, fstring, args...)
 }
 
@@ -66,7 +73,7 @@ type Logger struct {
 func GetLogger(isDebug bool, prefix string) *Logger {
 	color.NoColor = false
 
-	coloredPrefix := yellowColorize(prefix)[0]
+	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
 		logger:  *log.New(os.Stdout, coloredPrefix, 0),
 		IsDebug: isDebug,
@@ -74,14 +81,18 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 	}
 }
 
+func (l *Logger) GetSecondaryPrefix() string {
+	return l.secondaryPrefix
+}
+
 func (l *Logger) UpdateSecondaryPrefix(prefix string) {
 	l.secondaryPrefix = prefix
 	if prefix == "" {
 		// Reset the prefix to the original one.
-		l.logger.SetPrefix(yellowColorize(l.prefix)[0])
+		l.logger.SetPrefix(yellowColorize("%s", l.prefix)[0])
 	} else {
 		// Append the secondary prefix to the original one.
-		l.logger.SetPrefix(yellowColorize(l.prefix + fmt.Sprintf("[%s] ", prefix))[0])
+		l.logger.SetPrefix(yellowColorize("%s", l.prefix+fmt.Sprintf("[%s] ", prefix))[0])
 	}
 }
 
@@ -93,7 +104,7 @@ func (l *Logger) ResetSecondaryPrefix() {
 func GetQuietLogger(prefix string) *Logger {
 	color.NoColor = false
 
-	coloredPrefix := yellowColorize(prefix)[0]
+	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
 		logger:  *log.New(os.Stdout, coloredPrefix, 0),
 		IsDebug: false,
@@ -102,7 +113,7 @@ func GetQuietLogger(prefix string) *Logger {
 	}
 }
 
-func (l *Logger) Successf(fstring string, args ...interface{}) {
+func (l *Logger) Successf(fstring string, args ...any) {
 	if l.IsQuiet {
 		return
 	}
@@ -116,12 +127,12 @@ func (l *Logger) Successln(msg string) {
 	if l.IsQuiet {
 		return
 	}
-	for _, line := range successColorize(msg) {
+	for _, line := range successColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
 
-func (l *Logger) Infof(fstring string, args ...interface{}) {
+func (l *Logger) Infof(fstring string, args ...any) {
 	if l.IsQuiet {
 		return
 	}
@@ -136,13 +147,13 @@ func (l *Logger) Infoln(msg string) {
 		return
 	}
 
-	for _, line := range infoColorize(msg) {
+	for _, line := range infoColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
 
 // Criticalf is to be used only in anti-cheat stages
-func (l *Logger) Criticalf(fstring string, args ...interface{}) {
+func (l *Logger) Criticalf(fstring string, args ...any) {
 	if !l.IsQuiet {
 		panic("Critical is only for quiet loggers")
 	}
@@ -158,12 +169,12 @@ func (l *Logger) Criticalln(msg string) {
 		panic("Critical is only for quiet loggers")
 	}
 
-	for _, line := range errorColorize(msg) {
+	for _, line := range errorColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
 
-func (l *Logger) Errorf(fstring string, args ...interface{}) {
+func (l *Logger) Errorf(fstring string, args ...any) {
 	if l.IsQuiet {
 		return
 	}
@@ -178,12 +189,12 @@ func (l *Logger) Errorln(msg string) {
 		return
 	}
 
-	for _, line := range errorColorize(msg) {
+	for _, line := range errorColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
 
-func (l *Logger) Debugf(fstring string, args ...interface{}) {
+func (l *Logger) Debugf(fstring string, args ...any) {
 	if !l.IsDebug {
 		return
 	}
@@ -198,23 +209,23 @@ func (l *Logger) Debugln(msg string) {
 		return
 	}
 
-	for _, line := range debugColorize(msg) {
+	for _, line := range debugColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
 
-func (l *Logger) Plainf(fstring string, args ...interface{}) {
+func (l *Logger) Plainf(fstring string, args ...any) {
 	formattedString := fmt.Sprintf(fstring, args...)
 
-	for _, line := range strings.Split(formattedString, "\n") {
+	for line := range strings.SplitSeq(formattedString, "\n") {
 		l.logger.Println(line)
 	}
 }
 
 func (l *Logger) Plainln(msg string) {
-	lines := strings.Split(msg, "\n")
+	lines := strings.SplitSeq(msg, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		l.logger.Println(line)
 	}
 }
