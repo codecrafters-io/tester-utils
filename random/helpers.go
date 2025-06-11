@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// rng is our package-level random number generator
+var rng *rand.Rand
+
 var randomWords = []string{
 	"apple",
 	"orange",
@@ -26,21 +29,23 @@ var randomWords = []string{
 //
 // If CODECRAFTERS_RANDOM_SEED is set, it will be used to generate predictable random numbers.
 func Init() {
+	var source rand.Source
 	if seed := os.Getenv("CODECRAFTERS_RANDOM_SEED"); seed != "" {
 		seedInt, err := strconv.Atoi(seed)
 		if err != nil {
 			panic(err)
 		}
-
-		rand.Seed(int64(seedInt))
+		source = rand.NewSource(int64(seedInt))
 	} else {
-		rand.Seed(time.Now().UnixNano())
+		source = rand.NewSource(time.Now().UnixNano())
 	}
+
+	rng = rand.New(source)
 }
 
 // RandomInt returns a random integer between [min, max).
 func RandomInt(min, max int) int {
-	return rand.Intn(max-min) + min
+	return rng.Intn(max-min) + min
 }
 
 // RandomInts returns an array of `count` unique random integers between [min, max).
@@ -52,7 +57,7 @@ func RandomInts(min, max int, count int) []int {
 		panic("can't generate more unique random integers than the range of possible values")
 	}
 
-	for i := 0; i < count; i++ {
+	for range count {
 		randomInt := RandomInt(min, max)
 		for slices.Contains(randomInts, randomInt) {
 			randomInt = RandomInt(min, max)
@@ -65,7 +70,7 @@ func RandomInts(min, max int, count int) []int {
 
 // RandomWord returns a random word from the list of words.
 func RandomWord() string {
-	return randomWords[rand.Intn(len(randomWords))]
+	return randomWords[rng.Intn(len(randomWords))]
 }
 
 // RandomWords returns a random list of n words.
@@ -101,7 +106,8 @@ func RandomElementsFromArray[T any](arr []T, count int) []T {
 		arr = append(arr, arr...)
 	}
 	elements := make([]T, count)
-	for i, randIndex := range rand.Perm(len(arr))[:count] {
+	indices := rng.Perm(len(arr))[:count]
+	for i, randIndex := range indices {
 		elements[i] = arr[randIndex]
 	}
 

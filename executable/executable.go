@@ -28,6 +28,8 @@ type Executable struct {
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
 
+	Process *os.Process
+
 	StdinPipe io.WriteCloser
 
 	// These are set & removed together
@@ -125,7 +127,7 @@ func (e *Executable) Start(args ...string) error {
 
 	// Check executable permission
 	if fileInfo.Mode().Perm()&0111 == 0 || fileInfo.IsDir() {
-		return fmt.Errorf("%s is not an executable file", e.Path)
+		return fmt.Errorf("%s (resolved to %s) is not an executable file", e.Path, absolutePath)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.TimeoutInMilliseconds)*time.Millisecond)
@@ -161,6 +163,11 @@ func (e *Executable) Start(args ...string) error {
 		return err
 	}
 	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	e.Process, err = os.FindProcess(cmd.Process.Pid)
 	if err != nil {
 		return err
 	}
