@@ -217,13 +217,13 @@ func (l *Logger) Debugln(msg string) {
 func (l *Logger) Plainf(fstring string, args ...any) {
 	formattedString := fmt.Sprintf(fstring, args...)
 
-	for line := range strings.Split(formattedString, "\n") {
+	for line := range strings.SplitSeq(formattedString, "\n") {
 		l.logger.Println(line)
 	}
 }
 
 func (l *Logger) Plainln(msg string) {
-	lines := strings.Split(msg, "\n")
+	lines := strings.SplitSeq(msg, "\n")
 
 	for line := range lines {
 		l.logger.Println(line)
