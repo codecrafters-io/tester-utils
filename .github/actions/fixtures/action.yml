@@ -20,9 +20,9 @@ runs:
         token: ${{ inputs.fixture_generation_token }}
 
     - name: Set up Go
-      uses: actions/setup-go@v1
+      uses: actions/setup-go@v4
       with:
-        go-version: 1.22.x
+        go-version: 1.24.x
 
     - uses: actions-ecosystem/action-create-comment@v1
       with:
