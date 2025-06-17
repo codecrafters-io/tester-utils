@@ -1,0 +1,66 @@
+name: 'Regenerate Fixtures'
+description: 'Composite action to regenerate fixtures in tester repos'
+inputs:
+  tester_repo:
+    description: 'The repo to regenerate fixtures for'
+    required: true
+  github_token:
+    description: 'GitHub token for authentication'
+    required: true
+  fixture_generation_token:
+    description: 'Token for fixture generation with repo access'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ inputs.fixture_generation_token }}
+
+    - name: Set up Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.22.x
+
+    - uses: actions-ecosystem/action-create-comment@v1
+      with:
+        github_token: ${{ inputs.github_token }}
+        body: |
+          Triggered a [Github Actions](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) job to update fixtures.
+
+    - uses: actions-ecosystem/action-remove-labels@v1
+      with:
+        github_token: ${{ inputs.github_token }}
+        labels: regenerate-fixtures
+
+    - name: Set up prerequisites
+      shell: bash
+      run: |
+        if grep -q "^setup:" Makefile; then
+          make setup
+        else
+          echo "No setup target found in Makefile, skipping..."
+        fi
+
+    - id: setup-ci
+      uses: codecrafters-io/interpreter-tester/.github/workflows/setup@5f6808ba18ceccc89e9a1b2f901f043f41d7d0ce
+
+    - name: Setup git config
+      shell: bash
+      run: |
+        git config --global user.email "ryan-gg@outlook.com"
+        git config --global user.name "Ryan Gang"
+        git remote set-url origin https://ryan-gang:${{ inputs.fixture_generation_token }}@github.com/codecrafters-io/${{ inputs.tester_repo }}.git
+        git fetch origin ${{ github.head_ref }}
+        git checkout ${{ github.head_ref }}
+
+    - name: Regenerate Fixtures
+      shell: bash
+      run: CODECRAFTERS_RECORD_FIXTURES=true make test
+
+    - name: Update Fixtures
+      shell: bash
+      run: |
+        git diff --quiet || (git add . && git commit -m "ci: add regenerated fixtures" && git push)
