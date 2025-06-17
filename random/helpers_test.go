@@ -258,3 +258,57 @@ func TestSeededRandomString(t *testing.T) {
 
 	assert.Equal(t, RandomString(), "strawberry pineapple raspberry blueberry banana orange")
 }
+
+func TestShuffleArray(t *testing.T) {
+	os.Setenv("CODECRAFTERS_RANDOM_SEED", "12345")
+	defer os.Unsetenv("CODECRAFTERS_RANDOM_SEED")
+	Init()
+
+	t.Run("returns all elements from the original array", func(t *testing.T) {
+		original := []string{"a", "b", "c", "d", "e"}
+		shuffled := ShuffleArray(original)
+
+		assert.Len(t, shuffled, len(original))
+		assert.ElementsMatch(t, original, shuffled)
+	})
+
+	t.Run("works with different types", func(t *testing.T) {
+		numbers := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+		shuffled := ShuffleArray(numbers)
+
+		assert.Len(t, shuffled, len(numbers))
+		assert.ElementsMatch(t, numbers, shuffled)
+	})
+
+	t.Run("handles empty array", func(t *testing.T) {
+		empty := []string{}
+		shuffled := ShuffleArray(empty)
+
+		assert.Len(t, shuffled, 0)
+		assert.Equal(t, empty, shuffled)
+	})
+
+	t.Run("handles single element array", func(t *testing.T) {
+		single := []string{"only"}
+		shuffled := ShuffleArray(single)
+
+		assert.Len(t, shuffled, 1)
+		assert.Equal(t, single, shuffled)
+	})
+
+	t.Run("produces consistent results with same seed", func(t *testing.T) {
+		original := []string{"x", "y", "z", "w", "v"}
+
+		// First shuffle with seed
+		os.Setenv("CODECRAFTERS_RANDOM_SEED", "999")
+		Init()
+		shuffled1 := ShuffleArray(original)
+
+		// Second shuffle with same seed
+		os.Setenv("CODECRAFTERS_RANDOM_SEED", "999")
+		Init()
+		shuffled2 := ShuffleArray(original)
+
+		assert.Equal(t, shuffled1, shuffled2, "same seed should produce same shuffle")
+	})
+}
