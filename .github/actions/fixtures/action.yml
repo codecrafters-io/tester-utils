@@ -60,6 +60,8 @@ runs:
         ls -lah
         ls -lah ../
         ls -lah ../craftinginterpreters/build/gen
+        ls -lah ../craftinginterpreters/build/gen/chap12_classes
+        ls -lah ../craftinginterpreters/build/gen/chap13_inheritance
         CODECRAFTERS_RECORD_FIXTURES=true make test
 
     - name: Update Fixtures
