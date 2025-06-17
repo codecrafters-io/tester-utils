@@ -59,10 +59,17 @@ runs:
         pwd
         ls -lah
         ls -lah ../
-        ls -lah ../craftinginterpreters/build/gen
+        ls -lah ../craftinginterpreters/build/gen/chap04_scanning
+        ls -lah ../craftinginterpreters/build/gen/chap06_parsing
+        ls -lah ../craftinginterpreters/build/gen/chap07_evaluating
+        ls -lah ../craftinginterpreters/build/gen/chap08_statements
+        ls -lah ../craftinginterpreters/build/gen/chap09_control
+        ls -lah ../craftinginterpreters/build/gen/chap10_functions
+        ls -lah ../craftinginterpreters/build/gen/chap11_resolving
         ls -lah ../craftinginterpreters/build/gen/chap12_classes
         ls -lah ../craftinginterpreters/build/gen/chap13_inheritance
-        CODECRAFTERS_RECORD_FIXTURES=true make test
+
+        cd .. && CODECRAFTERS_RECORD_FIXTURES=true make test
 
     - name: Update Fixtures
       shell: bash
