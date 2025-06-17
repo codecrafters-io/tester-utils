@@ -57,7 +57,8 @@ runs:
       shell: bash
       run: |
         pwd
-        ls -laRh
+        ls -laRh ./craftinginterpreters/
+        ls -laRh ./craftinginterpreters/build/
         CODECRAFTERS_RECORD_FIXTURES=true make test
 
     - name: Update Fixtures
