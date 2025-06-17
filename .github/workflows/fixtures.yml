@@ -49,7 +49,7 @@ jobs:
           fi
 
       - id: setup-ci
-        uses: codecrafters-io/interpreter-tester/.github/workflows/setup@CC-1779
+        uses: codecrafters-io/interpreter-tester/.github/workflows/setup@5f6808ba18ceccc89e9a1b2f901f043f41d7d0ce
 
       - name: Setup git config
         run: |
