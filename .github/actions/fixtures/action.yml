@@ -69,7 +69,7 @@ runs:
         ls -lah ../craftinginterpreters/build/gen/chap12_classes
         ls -lah ../craftinginterpreters/build/gen/chap13_inheritance
 
-        cd .. && CODECRAFTERS_RECORD_FIXTURES=true make test
+        CODECRAFTERS_RECORD_FIXTURES=true make test
 
     - name: Update Fixtures
       shell: bash
