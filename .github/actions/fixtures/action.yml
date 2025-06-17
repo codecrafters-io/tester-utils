@@ -57,6 +57,7 @@ runs:
       shell: bash
       run: |
         pwd
+        ls -lah
         ls -laRh ./craftinginterpreters/
         ls -laRh ./craftinginterpreters/build/
         CODECRAFTERS_RECORD_FIXTURES=true make test
