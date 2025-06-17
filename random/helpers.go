@@ -113,3 +113,7 @@ func RandomElementsFromArray[T any](arr []T, count int) []T {
 
 	return elements
 }
+
+func ShuffleArray[T any](arr []T) []T {
+	return RandomElementsFromArray(arr, len(arr))
+}
