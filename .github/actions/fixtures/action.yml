@@ -35,15 +35,6 @@ runs:
         github_token: ${{ inputs.github_token }}
         labels: regenerate-fixtures
 
-    - name: Set up prerequisites
-      shell: bash
-      run: |
-        if grep -q "^setup:" Makefile; then
-          make setup
-        else
-          echo "No setup target found in Makefile, skipping..."
-        fi
-
     - name: Setup git config
       shell: bash
       run: |
