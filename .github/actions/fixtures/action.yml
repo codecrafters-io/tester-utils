@@ -55,7 +55,10 @@ runs:
 
     - name: Regenerate Fixtures
       shell: bash
-      run: CODECRAFTERS_RECORD_FIXTURES=true make test
+      run: |
+        pwd
+        ls -laRh
+        CODECRAFTERS_RECORD_FIXTURES=true make test
 
     - name: Update Fixtures
       shell: bash
