@@ -48,6 +48,9 @@ jobs:
             echo "No setup target found in Makefile, skipping..."
           fi
 
+      - id: setup-ci
+        uses: codecrafters-io/interpreter-tester/.github/workflows/setup@CC-1779
+
       - name: Setup git config
         run: |
           git config --global user.email "ryan-gg@outlook.com"
