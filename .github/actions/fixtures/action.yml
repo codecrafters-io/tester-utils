@@ -20,9 +20,9 @@ runs:
         token: ${{ inputs.fixture_generation_token }}
 
     - name: Set up Go
-      uses: actions/setup-go@v1
+      uses: actions/setup-go@v4
       with:
-        go-version: 1.22.x
+        go-version: 1.24.x
 
     - uses: actions-ecosystem/action-create-comment@v1
       with:
@@ -35,15 +35,6 @@ runs:
         github_token: ${{ inputs.github_token }}
         labels: regenerate-fixtures
 
-    - name: Set up prerequisites
-      shell: bash
-      run: |
-        if grep -q "^setup:" Makefile; then
-          make setup
-        else
-          echo "No setup target found in Makefile, skipping..."
-        fi
-
     - name: Setup git config
       shell: bash
       run: |
@@ -55,21 +46,7 @@ runs:
 
     - name: Regenerate Fixtures
       shell: bash
-      run: |
-        pwd
-        ls -lah
-        ls -lah ../
-        ls -lah ../craftinginterpreters/build/gen/chap04_scanning
-        ls -lah ../craftinginterpreters/build/gen/chap06_parsing
-        ls -lah ../craftinginterpreters/build/gen/chap07_evaluating
-        ls -lah ../craftinginterpreters/build/gen/chap08_statements
-        ls -lah ../craftinginterpreters/build/gen/chap09_control
-        ls -lah ../craftinginterpreters/build/gen/chap10_functions
-        ls -lah ../craftinginterpreters/build/gen/chap11_resolving
-        ls -lah ../craftinginterpreters/build/gen/chap12_classes
-        ls -lah ../craftinginterpreters/build/gen/chap13_inheritance
-
-        CODECRAFTERS_RECORD_FIXTURES=true make test
+      run: CODECRAFTERS_RECORD_FIXTURES=true make test
 
     - name: Update Fixtures
       shell: bash
