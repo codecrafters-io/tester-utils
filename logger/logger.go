@@ -136,6 +136,14 @@ func (l *Logger) PopSecondaryPrefix() string {
 	return lastPrefix
 }
 
+// WithAddtionalSecondaryPrefix is helpful you want to run
+// one or more logging statements using an additional secondary prefix
+func (l *Logger) WithAdditionalSecondaryPrefix(prefix string, fn func()) {
+	l.PushSecondaryPrefix(prefix)
+	defer l.PopSecondaryPrefix()
+	fn()
+}
+
 // GetQuietLogger Returns a logger that only emits critical logs. Useful for anti-cheat stages.
 func GetQuietLogger(prefix string) *Logger {
 	color.NoColor = false
