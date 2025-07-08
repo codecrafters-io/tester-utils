@@ -119,14 +119,14 @@ func (l *Logger) updateLoggerPrefix() {
 	}
 }
 
-// Push adds a new secondary prefix to the end of secondaryPrefixes slice
-func (l *Logger) Push(prefix string) {
+// PushSecondaryPrefix adds a new secondary prefix to the end of secondaryPrefixes slice
+func (l *Logger) PushSecondaryPrefix(prefix string) {
 	l.secondaryPrefixes = append(l.secondaryPrefixes, prefix)
 	l.updateLoggerPrefix()
 }
 
-// Pop removes the last secondary prefix from the secondaryPrefixes slice
-func (l *Logger) Pop() string {
+// PopSecondaryPrefix removes the last secondary prefix from the secondaryPrefixes slice
+func (l *Logger) PopSecondaryPrefix() string {
 	if len(l.secondaryPrefixes) == 0 {
 		return ""
 	}
