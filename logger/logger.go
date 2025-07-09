@@ -86,6 +86,14 @@ func (l *Logger) GetSecondaryPrefixes() []string {
 	return l.secondaryPrefixes
 }
 
+// GetLastSecondaryPrefix returns the last secondary prefix
+func (l *Logger) GetLastSecondaryPrefix() string {
+	if len(l.secondaryPrefixes) == 0 {
+		return ""
+	}
+	return l.secondaryPrefixes[len(l.secondaryPrefixes)-1]
+}
+
 // UpdateSecondaryPrefixes replaces all secondary prefixes with the new one
 func (l *Logger) UpdateSecondaryPrefixes(prefixes []string) {
 	l.secondaryPrefixes = prefixes
