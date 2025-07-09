@@ -109,7 +109,6 @@ func (l *Logger) UpdateLastSecondaryPrefix(newPrefix string) {
 
 // ResetSecondaryPrefixes clears all secondary prefixes
 func (l *Logger) ResetSecondaryPrefixes() {
-	// Backward compatibility: clear all secondary prefixes
 	l.secondaryPrefixes = []string{}
 	l.updateLoggerPrefix()
 }
