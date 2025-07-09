@@ -82,25 +82,25 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 }
 
 // GetSecondaryPrefix returns the first secondary prefix
-func (l *Logger) GetSecondaryPrefix() string {
-	if len(l.secondaryPrefixes) == 0 {
-		return ""
-	}
-	return l.secondaryPrefixes[0]
+func (l *Logger) GetSecondaryPrefixes() []string {
+	return l.secondaryPrefixes
 }
 
-// UpdateSecondaryPrefix replaces all secondary prefixes with the new one
-// for backward compatibility
-func (l *Logger) UpdateSecondaryPrefix(prefix string) {
-	l.secondaryPrefixes = []string{}
-	if prefix != "" {
-		l.secondaryPrefixes = append(l.secondaryPrefixes, prefix)
-	}
+// UpdateSecondaryPrefixes replaces all secondary prefixes with the new one
+func (l *Logger) UpdateSecondaryPrefixes(prefixes []string) {
+	l.secondaryPrefixes = prefixes
 	l.updateLoggerPrefix()
 }
 
-// ResetSecondaryPrefix clears all secondary prefixes
-func (l *Logger) ResetSecondaryPrefix() {
+// UpdateLastSecondaryPrefix updates the secondary prefix at the top of SecondaryPrefixes stack
+func (l *Logger) UpdateLastSecondaryPrefix(newPrefix string) {
+	l.PopSecondaryPrefix()
+	l.PushSecondaryPrefix(newPrefix)
+	l.updateLoggerPrefix()
+}
+
+// ResetSecondaryPrefixes clears all secondary prefixes
+func (l *Logger) ResetSecondaryPrefixes() {
 	// Backward compatibility: clear all secondary prefixes
 	l.secondaryPrefixes = []string{}
 	l.updateLoggerPrefix()
@@ -119,13 +119,13 @@ func (l *Logger) updateLoggerPrefix() {
 	}
 }
 
-// PushSecondaryPrefix adds a new secondary prefix to the end of secondaryPrefixes slice
+// PushSecondaryPrefix pushes a new secondary prefix to secondaryPrefixes
 func (l *Logger) PushSecondaryPrefix(prefix string) {
 	l.secondaryPrefixes = append(l.secondaryPrefixes, prefix)
 	l.updateLoggerPrefix()
 }
 
-// PopSecondaryPrefix removes the last secondary prefix from the secondaryPrefixes slice
+// PopSecondaryPrefix removes the secondary prefix from the top of secondaryPrefixes
 func (l *Logger) PopSecondaryPrefix() string {
 	if len(l.secondaryPrefixes) == 0 {
 		return ""
