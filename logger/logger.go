@@ -81,7 +81,7 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 	}
 }
 
-// GetSecondaryPrefix returns the first secondary prefix
+// GetSecondaryPrefix returns all the secondary prefixes
 func (l *Logger) GetSecondaryPrefixes() []string {
 	return l.secondaryPrefixes
 }
@@ -104,7 +104,6 @@ func (l *Logger) UpdateSecondaryPrefixes(prefixes []string) {
 func (l *Logger) UpdateLastSecondaryPrefix(newPrefix string) {
 	l.PopSecondaryPrefix()
 	l.PushSecondaryPrefix(newPrefix)
-	l.updateLoggerPrefix()
 }
 
 // ResetSecondaryPrefixes clears all secondary prefixes
