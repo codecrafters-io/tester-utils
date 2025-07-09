@@ -63,8 +63,8 @@ type Logger struct {
 	// prefix is the prefix to be used for all logs.
 	prefix string
 
-	// secondaryPrefix is a secondary prefix, that can be dynamically appended to the prefix.
-	secondaryPrefix string
+	// secondaryPrefixes is a slice of prefixes that are printed after Logger.prefix
+	secondaryPrefixes []string
 
 	logger log.Logger
 }
@@ -81,23 +81,73 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 	}
 }
 
-func (l *Logger) GetSecondaryPrefix() string {
-	return l.secondaryPrefix
+// GetSecondaryPrefix returns all the secondary prefixes
+func (l *Logger) GetSecondaryPrefixes() []string {
+	return l.secondaryPrefixes
 }
 
-func (l *Logger) UpdateSecondaryPrefix(prefix string) {
-	l.secondaryPrefix = prefix
-	if prefix == "" {
-		// Reset the prefix to the original one.
+// GetLastSecondaryPrefix returns the last secondary prefix
+func (l *Logger) GetLastSecondaryPrefix() string {
+	if len(l.secondaryPrefixes) == 0 {
+		return ""
+	}
+	return l.secondaryPrefixes[len(l.secondaryPrefixes)-1]
+}
+
+// UpdateSecondaryPrefixes replaces all secondary prefixes with the new one
+func (l *Logger) UpdateSecondaryPrefixes(prefixes []string) {
+	l.secondaryPrefixes = prefixes
+	l.updateLoggerPrefix()
+}
+
+// UpdateLastSecondaryPrefix updates the secondary prefix at the top of SecondaryPrefixes stack
+func (l *Logger) UpdateLastSecondaryPrefix(newPrefix string) {
+	l.PopSecondaryPrefix()
+	l.PushSecondaryPrefix(newPrefix)
+}
+
+// ResetSecondaryPrefixes clears all secondary prefixes
+func (l *Logger) ResetSecondaryPrefixes() {
+	l.secondaryPrefixes = []string{}
+	l.updateLoggerPrefix()
+}
+
+// updateLoggerPrefix updates the logger's prefix based on all secondary prefixes
+func (l *Logger) updateLoggerPrefix() {
+	if len(l.secondaryPrefixes) == 0 {
 		l.logger.SetPrefix(yellowColorize("%s", l.prefix)[0])
 	} else {
-		// Append the secondary prefix to the original one.
-		l.logger.SetPrefix(yellowColorize("%s", l.prefix+fmt.Sprintf("[%s] ", prefix))[0])
+		fullPrefix := l.prefix
+		for _, secondaryPrefix := range l.secondaryPrefixes {
+			fullPrefix += fmt.Sprintf("[%s] ", secondaryPrefix)
+		}
+		l.logger.SetPrefix(yellowColorize("%s", fullPrefix)[0])
 	}
 }
 
-func (l *Logger) ResetSecondaryPrefix() {
-	l.UpdateSecondaryPrefix("")
+// PushSecondaryPrefix pushes a new secondary prefix to secondaryPrefixes
+func (l *Logger) PushSecondaryPrefix(prefix string) {
+	l.secondaryPrefixes = append(l.secondaryPrefixes, prefix)
+	l.updateLoggerPrefix()
+}
+
+// PopSecondaryPrefix removes the secondary prefix from the top of secondaryPrefixes
+func (l *Logger) PopSecondaryPrefix() string {
+	if len(l.secondaryPrefixes) == 0 {
+		return ""
+	}
+	lastPrefix := l.secondaryPrefixes[len(l.secondaryPrefixes)-1]
+	l.secondaryPrefixes = l.secondaryPrefixes[:len(l.secondaryPrefixes)-1]
+	l.updateLoggerPrefix()
+	return lastPrefix
+}
+
+// WithAddtionalSecondaryPrefix is helpful you want to run
+// one or more logging statements using an additional secondary prefix
+func (l *Logger) WithAdditionalSecondaryPrefix(prefix string, fn func()) {
+	l.PushSecondaryPrefix(prefix)
+	defer l.PopSecondaryPrefix()
+	fn()
 }
 
 // GetQuietLogger Returns a logger that only emits critical logs. Useful for anti-cheat stages.
