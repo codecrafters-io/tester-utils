@@ -251,9 +251,20 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 
 	err := e.cmd.Wait()
 
+	exitCode := e.cmd.ProcessState.ExitCode()
+
 	if err != nil {
-		// Ignore exit errors, we'd rather send the exit code back
-		if _, ok := err.(*exec.ExitError); !ok {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			if exitCode == -1 {
+				if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+					// If the process was terminated by a signal, extract the signal number
+					if status.Signaled() {
+						exitCode = 128 + int(status.Signal())
+					}
+				}
+			}
+		} else {
+			// Ignore other exit errors, we'd rather send the exit code back
 			return ExecutableResult{}, err
 		}
 	}
@@ -267,7 +278,7 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	result := ExecutableResult{
 		Stdout:   stdout,
 		Stderr:   stderr,
-		ExitCode: e.cmd.ProcessState.ExitCode(),
+		ExitCode: exitCode,
 	}
 
 	if e.ctxWithTimeout.Err() == context.DeadlineExceeded {

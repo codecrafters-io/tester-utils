@@ -208,3 +208,11 @@ func TestTerminatesRoguePrograms(t *testing.T) {
 	err = e.Kill()
 	assert.EqualError(t, err, "program failed to exit in 2 seconds after receiving sigterm")
 }
+
+func TestSegfault(t *testing.T) {
+	e := NewExecutable("./test_helpers/segfault.sh")
+
+	result, err := e.Run()
+	assert.NoError(t, err)
+	assert.Equal(t, 139, result.ExitCode)
+}
