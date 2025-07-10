@@ -66,7 +66,9 @@ type Logger struct {
 	// secondaryPrefixes is a slice of prefixes that are printed after Logger.prefix
 	secondaryPrefixes []string
 
-	logger log.Logger
+	// logger is the pointer to Logger object
+	// we changed to pointer because of .Clone() (Logger{} contains sync.Mutex)
+	logger *log.Logger
 }
 
 // GetLogger Returns a logger.
@@ -75,9 +77,22 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:  *log.New(os.Stdout, coloredPrefix, 0),
+		logger:  log.New(os.Stdout, coloredPrefix, 0),
 		IsDebug: isDebug,
 		prefix:  prefix,
+	}
+}
+
+// GetPrimaryPrefix returns the logger's prefix
+func (l *Logger) Clone() *Logger {
+
+	// coloredPrefix := yellowColorize("%s", l.prefix)[0]
+	return &Logger{
+		IsDebug:           l.IsDebug,
+		IsQuiet:           l.IsQuiet,
+		prefix:            l.prefix,
+		secondaryPrefixes: l.secondaryPrefixes,
+		logger:            l.logger,
 	}
 }
 
@@ -156,7 +171,7 @@ func GetQuietLogger(prefix string) *Logger {
 
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:  *log.New(os.Stdout, coloredPrefix, 0),
+		logger:  log.New(os.Stdout, coloredPrefix, 0),
 		IsDebug: false,
 		IsQuiet: true,
 		prefix:  prefix,
