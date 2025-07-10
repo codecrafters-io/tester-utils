@@ -86,13 +86,13 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 // Clone clones a given logger
 // This method also copies reference to log.Log
 func (l *Logger) Clone() *Logger {
-
-	// coloredPrefix := yellowColorize("%s", l.prefix)[0]
+	secondaryPrefixesCopy := make([]string, len(l.secondaryPrefixes))
+	copy(secondaryPrefixesCopy, l.secondaryPrefixes)
 	return &Logger{
 		IsDebug:           l.IsDebug,
 		IsQuiet:           l.IsQuiet,
 		prefix:            l.prefix,
-		secondaryPrefixes: l.secondaryPrefixes,
+		secondaryPrefixes: secondaryPrefixesCopy,
 		logger:            l.logger,
 	}
 }
