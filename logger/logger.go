@@ -106,15 +106,19 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 func (l *Logger) Clone() *Logger {
 	secondaryPrefixesCopy := make([]string, len(l.secondaryPrefixes))
 	copy(secondaryPrefixesCopy, l.secondaryPrefixes)
-	coloredPrefix := yellowColorize("%s", l.prefix)[0]
-	return &Logger{
+
+	cloned := &Logger{
 		IsDebug:           l.IsDebug,
 		IsQuiet:           l.IsQuiet,
 		prefix:            l.prefix,
 		secondaryPrefixes: secondaryPrefixesCopy,
 		outputWriter:      l.outputWriter,
-		logger:            *log.New(l.outputWriter, coloredPrefix, 0),
 	}
+
+	cloned.logger = *log.New(cloned.outputWriter, "", 0)
+	cloned.updateLoggerPrefix()
+
+	return cloned
 }
 
 // GetSecondaryPrefix returns all the secondary prefixes
