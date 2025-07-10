@@ -83,7 +83,8 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 	}
 }
 
-// GetPrimaryPrefix returns the logger's prefix
+// Clone clones a given logger
+// This method also copies reference to log.Log
 func (l *Logger) Clone() *Logger {
 
 	// coloredPrefix := yellowColorize("%s", l.prefix)[0]
