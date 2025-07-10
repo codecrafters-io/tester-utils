@@ -93,7 +93,7 @@ func GetLogger(isDebug bool, prefix string) *Logger {
 	sharedWriter := &syncWriter{writer: os.Stdout}
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:       *log.New(os.Stdout, coloredPrefix, 0),
+		logger:       *log.New(sharedWriter, coloredPrefix, 0),
 		IsDebug:      isDebug,
 		prefix:       prefix,
 		outputWriter: sharedWriter,
