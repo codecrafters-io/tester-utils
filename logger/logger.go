@@ -59,7 +59,8 @@ type syncWriter struct {
 func (s *syncWriter) Write(p []byte) (n int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.writer.Write(p)
+	n, err = s.writer.Write(p)
+	return n, err
 }
 
 // Logger is a wrapper around log.Logger with the following features:
@@ -193,13 +194,14 @@ func (l *Logger) WithAdditionalSecondaryPrefix(prefix string, fn func()) {
 // GetQuietLogger Returns a logger that only emits critical logs. Useful for anti-cheat stages.
 func GetQuietLogger(prefix string) *Logger {
 	color.NoColor = false
-
+	sharedWriter := &syncWriter{writer: os.Stdout}
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:  *log.New(os.Stdout, coloredPrefix, 0),
-		IsDebug: false,
-		IsQuiet: true,
-		prefix:  prefix,
+		logger:       *log.New(sharedWriter, coloredPrefix, 0),
+		IsDebug:      false,
+		IsQuiet:      true,
+		prefix:       prefix,
+		outputWriter: sharedWriter,
 	}
 }
 
