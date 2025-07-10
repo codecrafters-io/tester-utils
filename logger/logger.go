@@ -50,7 +50,7 @@ func yellowColorize(fstring string, args ...any) []string {
 	return colorize(color.FgYellow, fstring, args...)
 }
 
-// Serializes logging in case of multiple loggers
+// Serializes logging in case of multiple cloned loggers
 type syncWriter struct {
 	mu     sync.Mutex
 	writer io.Writer
