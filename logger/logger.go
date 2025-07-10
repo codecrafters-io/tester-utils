@@ -2,9 +2,11 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 )
@@ -48,6 +50,18 @@ func yellowColorize(fstring string, args ...any) []string {
 	return colorize(color.FgYellow, fstring, args...)
 }
 
+// Serializes logging in case of multiple loggers
+type syncWriter struct {
+	mu     sync.Mutex
+	writer io.Writer
+}
+
+func (s *syncWriter) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writer.Write(p)
+}
+
 // Logger is a wrapper around log.Logger with the following features:
 //   - Supports a prefix
 //   - Adds colors to the output
@@ -68,32 +82,38 @@ type Logger struct {
 
 	// logger is the pointer to Logger object
 	// we changed to pointer because of .Clone() (Logger{} contains sync.Mutex)
-	logger *log.Logger
+	logger log.Logger
+
+	outputWriter *syncWriter
 }
 
 // GetLogger Returns a logger.
 func GetLogger(isDebug bool, prefix string) *Logger {
 	color.NoColor = false
-
+	sharedWriter := &syncWriter{writer: os.Stdout}
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:  log.New(os.Stdout, coloredPrefix, 0),
-		IsDebug: isDebug,
-		prefix:  prefix,
+		logger:       *log.New(os.Stdout, coloredPrefix, 0),
+		IsDebug:      isDebug,
+		prefix:       prefix,
+		outputWriter: sharedWriter,
 	}
 }
 
 // Clone clones a given logger
-// This method also copies reference to log.Log
+// Uses the same outputwriter to ensure logs are serialized
+// when a clone and an original is running concurrently
 func (l *Logger) Clone() *Logger {
 	secondaryPrefixesCopy := make([]string, len(l.secondaryPrefixes))
 	copy(secondaryPrefixesCopy, l.secondaryPrefixes)
+	coloredPrefix := yellowColorize("%s", l.prefix)[0]
 	return &Logger{
 		IsDebug:           l.IsDebug,
 		IsQuiet:           l.IsQuiet,
 		prefix:            l.prefix,
 		secondaryPrefixes: secondaryPrefixesCopy,
-		logger:            l.logger,
+		outputWriter:      l.outputWriter,
+		logger:            *log.New(l.outputWriter, coloredPrefix, 0),
 	}
 }
 
@@ -172,7 +192,7 @@ func GetQuietLogger(prefix string) *Logger {
 
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:  log.New(os.Stdout, coloredPrefix, 0),
+		logger:  *log.New(os.Stdout, coloredPrefix, 0),
 		IsDebug: false,
 		IsQuiet: true,
 		prefix:  prefix,
