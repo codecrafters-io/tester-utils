@@ -2,9 +2,11 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 )
@@ -48,11 +50,27 @@ func yellowColorize(fstring string, args ...any) []string {
 	return colorize(color.FgYellow, fstring, args...)
 }
 
+// globalLogMutex serializes all logging operations for this package
+var globalLogMutex sync.Mutex
+
+// Serializes logging using the package-level mutex
+type syncWriter struct {
+	writer io.Writer
+}
+
+func (s syncWriter) Write(p []byte) (n int, err error) {
+	globalLogMutex.Lock()
+	defer globalLogMutex.Unlock()
+	n, err = s.writer.Write(p)
+	return n, err
+}
+
 // Logger is a wrapper around log.Logger with the following features:
 //   - Supports a prefix
 //   - Adds colors to the output
 //   - Debug mode (all logs, debug and above)
 //   - Quiet mode (only critical logs)
+//   - Serialized writes for all loggers in this package
 type Logger struct {
 	// IsDebug is used to determine whether to emit debug logs.
 	IsDebug bool
@@ -72,13 +90,32 @@ type Logger struct {
 // GetLogger Returns a logger.
 func GetLogger(isDebug bool, prefix string) *Logger {
 	color.NoColor = false
-
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:  *log.New(os.Stdout, coloredPrefix, 0),
+		logger:  *log.New(syncWriter{writer: os.Stdout}, coloredPrefix, 0),
 		IsDebug: isDebug,
 		prefix:  prefix,
 	}
+}
+
+// Clone clones a given logger
+func (l *Logger) Clone() *Logger {
+	secondaryPrefixesCopy := make([]string, len(l.secondaryPrefixes))
+	copy(secondaryPrefixesCopy, l.secondaryPrefixes)
+
+	newSyncWriter := syncWriter{writer: os.Stdout}
+	newColoredPrefix := yellowColorize("%s", l.prefix)[0]
+
+	cloned := &Logger{
+		logger:            *log.New(newSyncWriter, newColoredPrefix, 0),
+		IsDebug:           l.IsDebug,
+		IsQuiet:           l.IsQuiet,
+		prefix:            l.prefix,
+		secondaryPrefixes: secondaryPrefixesCopy,
+	}
+	cloned.updateLoggerPrefix()
+
+	return cloned
 }
 
 // GetSecondaryPrefix returns all the secondary prefixes
@@ -153,10 +190,9 @@ func (l *Logger) WithAdditionalSecondaryPrefix(prefix string, fn func()) {
 // GetQuietLogger Returns a logger that only emits critical logs. Useful for anti-cheat stages.
 func GetQuietLogger(prefix string) *Logger {
 	color.NoColor = false
-
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:  *log.New(os.Stdout, coloredPrefix, 0),
+		logger:  *log.New(syncWriter{writer: os.Stdout}, coloredPrefix, 0),
 		IsDebug: false,
 		IsQuiet: true,
 		prefix:  prefix,
