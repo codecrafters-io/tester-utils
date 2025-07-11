@@ -50,15 +50,17 @@ func yellowColorize(fstring string, args ...any) []string {
 	return colorize(color.FgYellow, fstring, args...)
 }
 
-// Serializes logging in case of multiple cloned loggers
+// globalLogMutex serializes all logging operations for this package
+var globalLogMutex sync.Mutex
+
+// Serializes logging using the package-level mutex
 type syncWriter struct {
-	mu     sync.Mutex
 	writer io.Writer
 }
 
-func (s *syncWriter) Write(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s syncWriter) Write(p []byte) (n int, err error) {
+	globalLogMutex.Lock()
+	defer globalLogMutex.Unlock()
 	n, err = s.writer.Write(p)
 	return n, err
 }
@@ -68,6 +70,7 @@ func (s *syncWriter) Write(p []byte) (n int, err error) {
 //   - Adds colors to the output
 //   - Debug mode (all logs, debug and above)
 //   - Quiet mode (only critical logs)
+//   - Serialized writes for all loggers in this package
 type Logger struct {
 	// IsDebug is used to determine whether to emit debug logs.
 	IsDebug bool
@@ -84,39 +87,34 @@ type Logger struct {
 	// logger is the pointer to Logger object
 	// we changed to pointer because of .Clone() (Logger{} contains sync.Mutex)
 	logger log.Logger
-
-	outputWriter *syncWriter
 }
 
 // GetLogger Returns a logger.
 func GetLogger(isDebug bool, prefix string) *Logger {
 	color.NoColor = false
-	sharedWriter := &syncWriter{writer: os.Stdout}
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:       *log.New(sharedWriter, coloredPrefix, 0),
-		IsDebug:      isDebug,
-		prefix:       prefix,
-		outputWriter: sharedWriter,
+		logger:  *log.New(syncWriter{writer: os.Stdout}, coloredPrefix, 0),
+		IsDebug: isDebug,
+		prefix:  prefix,
 	}
 }
 
 // Clone clones a given logger
-// Uses the same outputwriter to ensure logs are serialized
-// when a clone and an original is running concurrently
 func (l *Logger) Clone() *Logger {
 	secondaryPrefixesCopy := make([]string, len(l.secondaryPrefixes))
 	copy(secondaryPrefixesCopy, l.secondaryPrefixes)
 
+	newSyncWriter := syncWriter{writer: os.Stdout}
+	newColoredPrefix := yellowColorize("%s", l.prefix)[0]
+
 	cloned := &Logger{
+		logger:            *log.New(newSyncWriter, newColoredPrefix, 0),
 		IsDebug:           l.IsDebug,
 		IsQuiet:           l.IsQuiet,
 		prefix:            l.prefix,
 		secondaryPrefixes: secondaryPrefixesCopy,
-		outputWriter:      l.outputWriter,
 	}
-
-	cloned.logger = *log.New(cloned.outputWriter, "", 0)
 	cloned.updateLoggerPrefix()
 
 	return cloned
@@ -194,14 +192,12 @@ func (l *Logger) WithAdditionalSecondaryPrefix(prefix string, fn func()) {
 // GetQuietLogger Returns a logger that only emits critical logs. Useful for anti-cheat stages.
 func GetQuietLogger(prefix string) *Logger {
 	color.NoColor = false
-	sharedWriter := &syncWriter{writer: os.Stdout}
 	coloredPrefix := yellowColorize("%s", prefix)[0]
 	return &Logger{
-		logger:       *log.New(sharedWriter, coloredPrefix, 0),
-		IsDebug:      false,
-		IsQuiet:      true,
-		prefix:       prefix,
-		outputWriter: sharedWriter,
+		logger:  *log.New(syncWriter{writer: os.Stdout}, coloredPrefix, 0),
+		IsDebug: false,
+		IsQuiet: true,
+		prefix:  prefix,
 	}
 }
 
