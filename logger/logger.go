@@ -84,8 +84,6 @@ type Logger struct {
 	// secondaryPrefixes is a slice of prefixes that are printed after Logger.prefix
 	secondaryPrefixes []string
 
-	// logger is the pointer to Logger object
-	// we changed to pointer because of .Clone() (Logger{} contains sync.Mutex)
 	logger log.Logger
 }
 
