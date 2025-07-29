@@ -1,6 +1,7 @@
 package random
 
 import (
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -99,6 +100,51 @@ func TestRandomUniqueInts(t *testing.T) {
 			assert.False(t, seen[val], "values should be unique")
 			seen[val] = true
 		}
+	})
+}
+
+func TestRandomFloat64(t *testing.T) {
+	Init()
+
+	t.Run("values are within range [min, max)", func(t *testing.T) {
+		min, max := 0.0, 1.0
+		for range 1000 {
+			val := RandomFloat64(min, max)
+			assert.GreaterOrEqual(t, val, min, "value should be greater than or equal to min boundary")
+			assert.Less(t, val, max, "value should be less than max boundary")
+		}
+	})
+
+	t.Run("mean is within ±0.01 of expected in ≥95 of 100 runs (10k samples each)", func(t *testing.T) {
+		min, max := 0.0, 1.0
+		runs := 100
+		samples := 10000
+		tolerance := 0.01
+		expectedMean := (min + max) / 2
+		meansWithinTolerance := 0
+
+		for range runs {
+			var total float64
+			for range samples {
+				total += RandomFloat64(min, max)
+			}
+			mean := total / float64(samples)
+			if math.Abs(mean-expectedMean) <= tolerance {
+				meansWithinTolerance++
+			}
+		}
+
+		assert.GreaterOrEqual(t, meansWithinTolerance, 95, "mean should be within ±0.01 of expected in ≥95 of 100 runs (10k samples each)")
+	})
+}
+
+func TestRandomFloat64s(t *testing.T) {
+	Init()
+
+	t.Run("returns specified number of random Float64s", func(t *testing.T) {
+		count := 100
+		result := RandomFloat64s(0, 1.0, count)
+		assert.Equal(t, len(result), count, "slice length should be equal to count")
 	})
 }
 
@@ -249,6 +295,15 @@ func TestSeededRandomInt(t *testing.T) {
 
 	assert.Equal(t, RandomInt(1, 10), 9)
 	assert.Equal(t, RandomInt(1, 100), 54)
+}
+
+func TestSeededRandomFloat64(t *testing.T) {
+	os.Setenv("CODECRAFTERS_RANDOM_SEED", "42")
+	defer os.Unsetenv("CODECRAFTERS_RANDOM_SEED")
+	Init()
+
+	assert.Equal(t, RandomFloat64(1, 100), 37.92980774361663)
+	assert.Equal(t, RandomFloat64(1, 100), 7.534049182558273)
 }
 
 func TestSeededRandomString(t *testing.T) {

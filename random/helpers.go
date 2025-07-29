@@ -68,6 +68,20 @@ func RandomInts(min, max int, count int) []int {
 	return randomInts
 }
 
+// RandomFloat64 returns a random float64 number between [min, max)
+func RandomFloat64(min, max float64) float64 {
+	return min + rng.Float64()*(max-min)
+}
+
+// RandomFloat64s returns an array of `count` random Float64 values between [min, max).
+func RandomFloat64s(min, max float64, count int) []float64 {
+	randomFloats := make([]float64, count)
+	for i := range count {
+		randomFloats[i] = RandomFloat64(min, max)
+	}
+	return randomFloats
+}
+
 // RandomWord returns a random word from the list of words.
 func RandomWord() string {
 	return randomWords[rng.Intn(len(randomWords))]
