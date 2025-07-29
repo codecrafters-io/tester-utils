@@ -70,6 +70,9 @@ func RandomInts(min, max int, count int) []int {
 
 // RandomFloat64 returns a random float64 number between [min, max)
 func RandomFloat64(min, max float64) float64 {
+	if max < min {
+		panic("max boundary is less than or equal to min boundary")
+	}
 	return min + rng.Float64()*(max-min)
 }
 
