@@ -116,7 +116,7 @@ func TestRandomFloat64(t *testing.T) {
 	})
 
 	t.Run("panics if max is smaller than min", func(t *testing.T) {
-		assert.PanicsWithValue(t, "max boundary is less than or equal to min boundary", func() {
+		assert.PanicsWithValue(t, "max boundary is less than min boundary", func() {
 			RandomFloat64(1.0, 0.0)
 		})
 	})
