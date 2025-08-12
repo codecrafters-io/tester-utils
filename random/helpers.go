@@ -1,6 +1,7 @@
 package random
 
 import (
+	"math/big"
 	"math/rand"
 	"os"
 	"slices"
@@ -73,7 +74,32 @@ func RandomFloat64(min, max float64) float64 {
 	if max < min {
 		panic("max boundary is less than min boundary")
 	}
-	return min + rng.Float64()*(max-min)
+
+	if min == max {
+		return min
+	}
+
+	// Generate random value in [0, 1) using big.Rat
+	randomInZeroToOne := new(big.Rat).SetFloat64(rng.Float64())
+
+	// Convert min and max to rational numbers
+	bigMin := new(big.Rat).SetFloat64(min)
+	bigMax := new(big.Rat).SetFloat64(max)
+
+	// Calculate range: max - min
+	diff := new(big.Rat).Sub(bigMax, bigMin)
+
+	// Scale random value to range: [0, diff)
+	scaledToRange := new(big.Rat).Mul(diff, randomInZeroToOne)
+
+	// Translate random value to range: [min, max)
+	result := new(big.Rat).Add(scaledToRange, bigMin)
+
+	// Convert back to float64
+	// 'exact' maybe be true or false, because float64 is not big enough to
+	// represent every possible value of big.Rat, so we ignore it
+	resultFloat, _ := result.Float64()
+	return resultFloat
 }
 
 // RandomFloat64s returns an array of `count` random Float64 values between [min, max).
