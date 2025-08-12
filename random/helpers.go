@@ -75,16 +75,19 @@ func RandomFloat64(min, max float64) float64 {
 		panic("max boundary is less than min boundary")
 	}
 
-	if min == max {
-		return min
-	}
-
 	// Generate random value in [0, 1) using big.Rat
 	randomInZeroToOne := new(big.Rat).SetFloat64(rng.Float64())
 
 	// Convert min and max to rational numbers
 	bigMin := new(big.Rat).SetFloat64(min)
+	if bigMin == nil {
+		panic("Codecrafters Internal Error - min boundary is not finite")
+	}
+
 	bigMax := new(big.Rat).SetFloat64(max)
+	if bigMax == nil {
+		panic("Codecrafters Internal Error - max boundary is not finite")
+	}
 
 	// Calculate range: max - min
 	diff := new(big.Rat).Sub(bigMax, bigMin)
