@@ -56,6 +56,14 @@ jobs:
           git fetch origin ${{ github.head_ref }}
           git checkout ${{ github.head_ref }}
 
+      - name: Workaround for grep-tester
+        if: github.event.inputs.tester_repo == 'grep-tester'
+        run: |
+          TEMP_GREP_DIR="${{ runner.temp }}/temp-grep-dir"
+          mkdir -p $TEMP_GREP_DIR
+          cp $(which grep) $TEMP_GREP_DIR
+          export PATH="$TEMP_GREP_DIR:$PATH"
+
       - name: Regenerate Fixtures
         run: CODECRAFTERS_RECORD_FIXTURES=true make test
 
