@@ -56,7 +56,7 @@ jobs:
           git fetch origin ${{ github.head_ref }}
           git checkout ${{ github.head_ref }}
 
-      - name: Workaround for grep-tester
+      - name: Workaround for grep-tester when grep is protected
         if: inputs.tester_repo == 'grep-tester'
         run: |
           TEMP_GREP_DIR="${{ runner.temp }}/temp-grep-dir"
