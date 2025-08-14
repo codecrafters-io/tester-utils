@@ -57,7 +57,7 @@ jobs:
           git checkout ${{ github.head_ref }}
 
       - name: Workaround for grep-tester
-        if: github.event.inputs.tester_repo == 'grep-tester'
+        if: inputs.tester_repo == 'grep-tester'
         run: |
           TEMP_GREP_DIR="${{ runner.temp }}/temp-grep-dir"
           mkdir -p $TEMP_GREP_DIR
