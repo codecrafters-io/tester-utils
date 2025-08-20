@@ -50,9 +50,9 @@ jobs:
 
       - name: Setup git config
         run: |
-          git config --global user.email "li.chenxing@gmail.com"
-          git config --global user.name "Andy Li"
-          git remote set-url origin https://andy1li:${{ secrets.TESTER_FIXTURE_GENERATION_GITHUB_TOKEN }}@github.com/codecrafters-io/${{ inputs.tester_repo }}.git
+          git config --global user.email "rohitpaulk@gmail.com"
+          git config --global user.name "Paul Kuruvilla"
+          git remote set-url origin https://rohitpaulk:${{ secrets.TESTER_FIXTURE_GENERATION_GITHUB_TOKEN }}@github.com/codecrafters-io/${{ inputs.tester_repo }}.git
           git fetch origin ${{ github.head_ref }}
           git checkout ${{ github.head_ref }}
 
