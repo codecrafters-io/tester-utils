@@ -85,6 +85,13 @@ func TestTesterOutput(t *testing.T, testerDefinition tester_definition.TesterDef
 	m := stdio_mocker.NewStdIOMocker()
 	defer m.End()
 
+	// Used in testing.IsRecordingOrEvaluatingFixtures()
+	_isRecordingOrEvaluatingFixtures = true
+
+	defer func() {
+		_isRecordingOrEvaluatingFixtures = false
+	}()
+
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			m.Start()
@@ -109,9 +116,6 @@ func TestTesterOutput(t *testing.T, testerDefinition tester_definition.TesterDef
 			} else {
 				testCasesJson = buildTestCasesJson(testCase.StageSlugs)
 			}
-
-			// Used in testing.IsRecordingOrEvaluatingFixtures()
-			_isRecordingOrEvaluatingFixtures = true
 
 			exitCode := runCLIStage(testerDefinition, testCasesJson, testCase.CodePath, skipAntiCheat)
 			if !assert.Equal(t, testCase.ExpectedExitCode, exitCode) {
