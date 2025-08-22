@@ -3,6 +3,7 @@ package testing
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -97,7 +98,7 @@ func TestTesterOutput(t *testing.T, testerDefinition tester_definition.TesterDef
 				t.Fatal("Either UntilStageSlug or StageSlugs must be provided, not both")
 			}
 
-			if testCase.UntilStageSlug == "" && (testCase.StageSlugs == nil || len(testCase.StageSlugs) == 0) {
+			if testCase.UntilStageSlug == "" && len(testCase.StageSlugs) == 0 {
 				t.Fatal("Either UntilStageSlug or StageSlugs must be provided")
 			}
 
@@ -108,6 +109,9 @@ func TestTesterOutput(t *testing.T, testerDefinition tester_definition.TesterDef
 			} else {
 				testCasesJson = buildTestCasesJson(testCase.StageSlugs)
 			}
+
+			// Used in testing.IsRecordingOrEvaluatingFixtures()
+			_isRecordingOrEvaluatingFixtures = true
 
 			exitCode := runCLIStage(testerDefinition, testCasesJson, testCase.CodePath, skipAntiCheat)
 			if !assert.Equal(t, testCase.ExpectedExitCode, exitCode) {
