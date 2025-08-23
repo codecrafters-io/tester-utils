@@ -38,9 +38,9 @@ runs:
     - name: Setup git config
       shell: bash
       run: |
-        git config --global user.email "ryan-gg@outlook.com"
-        git config --global user.name "Ryan Gang"
-        git remote set-url origin https://ryan-gang:${{ inputs.fixture_generation_token }}@github.com/codecrafters-io/${{ inputs.tester_repo }}.git
+        git config --global user.email "hello@codecrafters.io"
+        git config --global user.name "codecrafters-bot"
+        git remote set-url origin https://codecrafters-bot:${{ inputs.fixture_generation_token }}@github.com/codecrafters-io/${{ inputs.tester_repo }}.git
         git fetch origin ${{ github.head_ref }}
         git checkout ${{ github.head_ref }}
 
