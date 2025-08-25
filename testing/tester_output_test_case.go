@@ -84,6 +84,13 @@ func TestTesterOutput(t *testing.T, testerDefinition tester_definition.TesterDef
 	m := stdio_mocker.NewStdIOMocker()
 	defer m.End()
 
+	// Used in testing.IsRecordingOrEvaluatingFixtures()
+	_isRecordingOrEvaluatingFixtures = true
+
+	defer func() {
+		_isRecordingOrEvaluatingFixtures = false
+	}()
+
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			m.Start()
@@ -97,7 +104,7 @@ func TestTesterOutput(t *testing.T, testerDefinition tester_definition.TesterDef
 				t.Fatal("Either UntilStageSlug or StageSlugs must be provided, not both")
 			}
 
-			if testCase.UntilStageSlug == "" && (testCase.StageSlugs == nil || len(testCase.StageSlugs) == 0) {
+			if testCase.UntilStageSlug == "" && len(testCase.StageSlugs) == 0 {
 				t.Fatal("Either UntilStageSlug or StageSlugs must be provided")
 			}
 
