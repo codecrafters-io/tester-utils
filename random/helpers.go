@@ -19,7 +19,7 @@ var randomWords = []string{
 	"banana",
 	"pear",
 	"grape",
-	"pineapple",
+	"lemon",
 	"mango",
 	"strawberry",
 	"raspberry",
