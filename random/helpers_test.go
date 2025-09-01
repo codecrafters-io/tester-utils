@@ -317,7 +317,7 @@ func TestSeededRandomString(t *testing.T) {
 	defer os.Unsetenv("CODECRAFTERS_RANDOM_SEED")
 	Init()
 
-	assert.Equal(t, RandomString(), "strawberry pineapple raspberry blueberry banana orange")
+	assert.Equal(t, RandomString(), "strawberry lemon raspberry blueberry banana orange")
 }
 
 func TestShuffleArray(t *testing.T) {
