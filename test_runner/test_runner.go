@@ -92,16 +92,9 @@ func (r TestRunner) getLoggerForStep(isDebug bool, step TestRunnerStep) *logger.
 	}
 }
 
-
 func (r TestRunner) reportTestError(err error, isDebug bool, logger *logger.Logger) {
 	logger.Errorf("%s", err)
-
-	if isDebug {
-		logger.Errorf("Test failed")
-	} else {
-		logger.Errorf("Test failed " +
-			"(try setting 'debug: true' in your codecrafters.yml to see more details)")
-	}
+	logger.Errorf("Test failed")
 }
 
 // Fuck you, go
