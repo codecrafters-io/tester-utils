@@ -69,7 +69,6 @@ func (w *loggerWriter) Write(bytes []byte) (n int, err error) {
 }
 
 func nullLogger(msg string) {
-	return
 }
 
 func (e *Executable) Clone() *Executable {
@@ -227,14 +226,14 @@ func (e *Executable) StartWithOutputInTTY(args ...string) error {
 	}
 
 	// Setup stdout capture
-	e.cmd.Stdout = slave
+	cmd.Stdout = slave
 	e.stdoutPipe = slave
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup stderr relay
-	e.cmd.Stderr = slave
+	cmd.Stdout = slave
 	e.stdoutPipe = slave
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
