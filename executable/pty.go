@@ -1,5 +1,18 @@
 package executable
 
+/*
+#include <stdlib.h>
+#ifdef __APPLE__
+#include <util.h>
+#elif __linux__
+#include <pty.h>
+#endif
+
+int open_pty(int *master_fd, int *slave_fd) {
+    return openpty(master_fd, slave_fd, NULL, NULL, NULL);
+}
+*/
+import "C"
 import (
 	"fmt"
 	"os"
