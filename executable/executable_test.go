@@ -87,7 +87,7 @@ func TestLargeOutputCapture(t *testing.T) {
 	result, err := e.Run("hey")
 
 	assert.NoError(t, err)
-	assert.Equal(t, 1024*1024, len(result.Stdout))
+	assert.Equal(t, 30000, len(result.Stdout))
 	assert.Equal(t, "blah\n", string(result.Stderr))
 }
 

@@ -183,12 +183,13 @@ func (e *Executable) Start(args ...string) error {
 func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
 	go func() {
 		combinedDestination := io.MultiWriter(destination1, destination2)
-		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 1024*1024)) // 1MB
+		// Limit to 30KB (~250 lines at 120 chars per line)
+		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 		if err != nil {
 			panic(err)
 		}
 
-		if bytesWritten == 1024*1024 {
+		if bytesWritten == 30000 {
 			e.loggerFunc("Warning: Logs exceeded allowed limit, output might be truncated.\n")
 		}
 
