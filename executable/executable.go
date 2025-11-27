@@ -180,6 +180,88 @@ func (e *Executable) Start(args ...string) error {
 	return nil
 }
 
+func (e *Executable) StartWithOutputInTTY(args ...string) error {
+	var err error
+
+	if e.isRunning() {
+		return errors.New("process already in progress")
+	}
+
+	var absolutePath, resolvedPath string
+
+	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
+	// In those cases we use the path returned by LookPath.
+	resolvedPath, err = exec.LookPath(e.Path)
+	if err == nil {
+		absolutePath = resolvedPath
+	} else {
+		absolutePath, err = filepath.Abs(e.Path)
+		if err != nil {
+			return fmt.Errorf("%s not found", filepath.Base(e.Path))
+		}
+	}
+	fileInfo, err := os.Stat(absolutePath)
+	if err != nil {
+		return fmt.Errorf("%s not found", filepath.Base(e.Path))
+	}
+
+	// Check executable permission
+	if fileInfo.Mode().Perm()&0111 == 0 || fileInfo.IsDir() {
+		return fmt.Errorf("%s (resolved to %s) is not an executable file", e.Path, absolutePath)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.TimeoutInMilliseconds)*time.Millisecond)
+	e.ctxWithTimeout = ctx
+	e.ctxCancelFunc = cancel
+
+	cmd := exec.CommandContext(ctx, e.Path, args...)
+	cmd.Dir = e.WorkingDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	e.readDone = make(chan bool)
+	e.atleastOneReadDone = false
+
+	master, slave, err := openpty()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "openpty error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Setup stdout capture
+	e.cmd.Stdout = slave
+	e.stdoutPipe = slave
+	e.stdoutBytes = []byte{}
+	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
+	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+
+	// Setup stderr relay
+	e.cmd.Stderr = slave
+	e.stdoutPipe = slave
+	e.stderrBytes = []byte{}
+	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
+	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+
+	e.StdinPipe, err = cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	e.Process, err = os.FindProcess(cmd.Process.Pid)
+	if err != nil {
+		return err
+	}
+
+	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
+	e.cmd = cmd
+	e.setupIORelay(master, e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(master, e.stderrBuffer, e.stderrLineWriter)
+
+	return nil
+}
+
 func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
 	go func() {
 		combinedDestination := io.MultiWriter(destination1, destination2)
