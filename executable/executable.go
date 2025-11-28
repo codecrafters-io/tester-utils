@@ -239,10 +239,12 @@ func (e *Executable) StartWithOutputInTTY(args ...string) error {
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
-	e.StdinPipe, err = cmd.StdinPipe()
+	pr, pw, err := os.Pipe()
 	if err != nil {
 		return err
 	}
+	cmd.Stdin = pr
+	e.StdinPipe = pw
 	err = cmd.Start()
 	if err != nil {
 		return err
