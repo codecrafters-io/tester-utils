@@ -13,7 +13,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/creack/pty"
+	"github.com/google/goterm/term"
 
 	"github.com/codecrafters-io/tester-utils/linewriter"
 )
@@ -221,22 +221,22 @@ func (e *Executable) StartWithOutputInTTY(args ...string) error {
 	e.readDone = make(chan bool)
 	e.atleastOneReadDone = false
 
-	master, slave, err := pty.Open()
+	masterslavePair, err := term.OpenPTY()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "openpty error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Setup stdout capture
-	cmd.Stdout = slave
-	e.stdoutPipe = slave
+	cmd.Stdout = masterslavePair.Slave
+	e.stdoutPipe = masterslavePair.Slave
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup stderr relay
-	cmd.Stdout = slave
-	e.stdoutPipe = slave
+	cmd.Stdout = masterslavePair.Slave
+	e.stdoutPipe = masterslavePair.Slave
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
@@ -257,8 +257,8 @@ func (e *Executable) StartWithOutputInTTY(args ...string) error {
 
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
 	e.cmd = cmd
-	e.setupIORelay(master, e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(master, e.stderrBuffer, e.stderrLineWriter)
+	e.setupIORelay(masterslavePair.Master, e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(masterslavePair.Master, e.stderrBuffer, e.stderrLineWriter)
 
 	return nil
 }
