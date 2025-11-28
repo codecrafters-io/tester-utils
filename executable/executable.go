@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/creack/pty"
+
 	"github.com/codecrafters-io/tester-utils/linewriter"
 )
 
@@ -219,7 +221,7 @@ func (e *Executable) StartWithOutputInTTY(args ...string) error {
 	e.readDone = make(chan bool)
 	e.atleastOneReadDone = false
 
-	master, slave, err := openpty()
+	master, slave, err := pty.Open()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "openpty error: %v\n", err)
 		os.Exit(1)
