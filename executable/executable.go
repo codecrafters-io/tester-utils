@@ -69,7 +69,6 @@ func (w *loggerWriter) Write(bytes []byte) (n int, err error) {
 }
 
 func nullLogger(msg string) {
-	return
 }
 
 func (e *Executable) Clone() *Executable {
@@ -107,38 +106,14 @@ func (e *Executable) Start(args ...string) error {
 		return errors.New("process already in progress")
 	}
 
-	var absolutePath, resolvedPath string
-
-	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
-	// In those cases we use the path returned by LookPath.
-	resolvedPath, err = exec.LookPath(e.Path)
-	if err == nil {
-		absolutePath = resolvedPath
-	} else {
-		absolutePath, err = filepath.Abs(e.Path)
-		if err != nil {
-			return fmt.Errorf("%s not found", filepath.Base(e.Path))
-		}
-	}
-	fileInfo, err := os.Stat(absolutePath)
+	// Validate the executable
+	_, err = e.validateExecutable()
 	if err != nil {
-		return fmt.Errorf("%s not found", filepath.Base(e.Path))
+		return err
 	}
 
-	// Check executable permission
-	if fileInfo.Mode().Perm()&0111 == 0 || fileInfo.IsDir() {
-		return fmt.Errorf("%s (resolved to %s) is not an executable file", e.Path, absolutePath)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.TimeoutInMilliseconds)*time.Millisecond)
-	e.ctxWithTimeout = ctx
-	e.ctxCancelFunc = cancel
-
-	cmd := exec.CommandContext(ctx, e.Path, args...)
-	cmd.Dir = e.WorkingDir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	e.readDone = make(chan bool)
-	e.atleastOneReadDone = false
+	// Setup command with common configuration
+	cmd := e.setupCommand(args...)
 
 	// Setup stdout capture
 	e.stdoutPipe, err = cmd.StdoutPipe()
@@ -162,41 +137,41 @@ func (e *Executable) Start(args ...string) error {
 	if err != nil {
 		return err
 	}
-	err = cmd.Start()
-	if err != nil {
-		return err
-	}
 
-	e.Process, err = os.FindProcess(cmd.Process.Pid)
-	if err != nil {
-		return err
-	}
-
-	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
-	e.cmd = cmd
-	e.setupIORelay(e.stdoutPipe, e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stderrPipe, e.stderrBuffer, e.stderrLineWriter)
-
-	return nil
+	return e.finalizeStart(cmd)
 }
 
-func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
-	go func() {
-		combinedDestination := io.MultiWriter(destination1, destination2)
-		// Limit to 30KB (~250 lines at 120 chars per line)
-		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
-		if err != nil {
-			panic(err)
-		}
+func (e *Executable) StartWithStdioStreams(stdin io.WriteCloser, stdout io.ReadWriteCloser, stderr io.ReadWriteCloser, args ...string) error {
+	if e.isRunning() {
+		return errors.New("process already in progress")
+	}
 
-		if bytesWritten == 30000 {
-			e.loggerFunc("Warning: Logs exceeded allowed limit, output might be truncated.\n")
-		}
+	// Validate the executable
+	_, err := e.validateExecutable()
+	if err != nil {
+		return err
+	}
 
-		e.atleastOneReadDone = true
-		e.readDone <- true
-		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
-	}()
+	// Setup command with common configuration
+	cmd := e.setupCommand(args...)
+
+	// Setup stdout capture
+	cmd.Stdout = stdout
+	e.stdoutPipe = stdout
+	e.stdoutBytes = []byte{}
+	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
+	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+
+	// Setup stderr relay
+	cmd.Stderr = stderr
+	e.stderrPipe = stderr
+	e.stderrBytes = []byte{}
+	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
+	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+
+	e.StdinPipe = stdin
+
+	return e.finalizeStart(cmd)
 }
 
 // Run starts the specified command, waits for it to complete and returns the
@@ -319,4 +294,89 @@ func (e *Executable) Kill() error {
 	}
 
 	return err
+}
+
+// validateExecutable validates the executable path and permissions and returns the absolute path of the executable
+func (e *Executable) validateExecutable() (string, error) {
+	var absolutePath, resolvedPath string
+	var err error
+
+	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
+	// In those cases we use the path returned by LookPath.
+	resolvedPath, err = exec.LookPath(e.Path)
+	if err == nil {
+		absolutePath = resolvedPath
+	} else {
+		absolutePath, err = filepath.Abs(e.Path)
+		if err != nil {
+			return "", fmt.Errorf("%s not found", filepath.Base(e.Path))
+		}
+	}
+	fileInfo, err := os.Stat(absolutePath)
+	if err != nil {
+		return "", fmt.Errorf("%s not found", filepath.Base(e.Path))
+	}
+
+	// Check executable permission
+	if fileInfo.Mode().Perm()&0111 == 0 || fileInfo.IsDir() {
+		return "", fmt.Errorf("%s (resolved to %s) is not an executable file", e.Path, absolutePath)
+	}
+
+	return absolutePath, nil
+}
+
+// setupCommand creates and configures the base command with context and common settings
+func (e *Executable) setupCommand(args ...string) *exec.Cmd {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.TimeoutInMilliseconds)*time.Millisecond)
+	e.ctxWithTimeout = ctx
+	e.ctxCancelFunc = cancel
+
+	cmd := exec.CommandContext(ctx, e.Path, args...)
+	cmd.Dir = e.WorkingDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	e.readDone = make(chan bool)
+	e.atleastOneReadDone = false
+
+	return cmd
+}
+
+// finalizeStart completes the process setup and starts IO relay
+func (e *Executable) finalizeStart(cmd *exec.Cmd) error {
+	var err error
+
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	e.Process, err = os.FindProcess(cmd.Process.Pid)
+	if err != nil {
+		return err
+	}
+
+	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
+	e.cmd = cmd
+	e.setupIORelay(e.stdoutPipe, e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.stderrPipe, e.stderrBuffer, e.stderrLineWriter)
+
+	return nil
+}
+
+func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
+	go func() {
+		combinedDestination := io.MultiWriter(destination1, destination2)
+		// Limit to 30KB (~250 lines at 120 chars per line)
+		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
+		if err != nil {
+			panic(err)
+		}
+
+		if bytesWritten == 30000 {
+			e.loggerFunc("Warning: Logs exceeded allowed limit, output might be truncated.\n")
+		}
+
+		e.atleastOneReadDone = true
+		e.readDone <- true
+		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
+	}()
 }
