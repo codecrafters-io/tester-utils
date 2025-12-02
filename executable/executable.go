@@ -44,6 +44,10 @@ type Executable struct {
 	stdoutLineWriter   *linewriter.LineWriter
 	stderrLineWriter   *linewriter.LineWriter
 	readDone           chan bool
+	// Used to keep track whether the process was spawned using PTY
+	ptyOptions *PTYOptions
+	ptyMaster  *os.File
+	ptySlave   *os.File
 }
 
 // ExecutableResult holds the result of an executable run
@@ -51,6 +55,12 @@ type ExecutableResult struct {
 	Stdout   []byte
 	Stderr   []byte
 	ExitCode int
+}
+
+type PTYOptions struct {
+	UsePipeForStdin  bool
+	UsePipeForStdout bool
+	UsePipeForStderr bool
 }
 
 type loggerWriter struct {
@@ -69,7 +79,6 @@ func (w *loggerWriter) Write(bytes []byte) (n int, err error) {
 }
 
 func nullLogger(msg string) {
-	return
 }
 
 func (e *Executable) Clone() *Executable {
@@ -101,102 +110,28 @@ func (e *Executable) HasExited() bool {
 
 // Start starts the specified command but does not wait for it to complete.
 func (e *Executable) Start(args ...string) error {
-	var err error
+	stdStreamsInitializer := func(cmd *exec.Cmd) error {
+		var err error
 
-	if e.isRunning() {
-		return errors.New("process already in progress")
-	}
-
-	var absolutePath, resolvedPath string
-
-	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
-	// In those cases we use the path returned by LookPath.
-	resolvedPath, err = exec.LookPath(e.Path)
-	if err == nil {
-		absolutePath = resolvedPath
-	} else {
-		absolutePath, err = filepath.Abs(e.Path)
+		e.stdoutPipe, err = cmd.StdoutPipe()
 		if err != nil {
-			return fmt.Errorf("%s not found", filepath.Base(e.Path))
+			return err
 		}
-	}
-	fileInfo, err := os.Stat(absolutePath)
-	if err != nil {
-		return fmt.Errorf("%s not found", filepath.Base(e.Path))
-	}
 
-	// Check executable permission
-	if fileInfo.Mode().Perm()&0111 == 0 || fileInfo.IsDir() {
-		return fmt.Errorf("%s (resolved to %s) is not an executable file", e.Path, absolutePath)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.TimeoutInMilliseconds)*time.Millisecond)
-	e.ctxWithTimeout = ctx
-	e.ctxCancelFunc = cancel
-
-	cmd := exec.CommandContext(ctx, e.Path, args...)
-	cmd.Dir = e.WorkingDir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	e.readDone = make(chan bool)
-	e.atleastOneReadDone = false
-
-	// Setup stdout capture
-	e.stdoutPipe, err = cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	e.stdoutBytes = []byte{}
-	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
-	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-
-	// Setup stderr relay
-	e.stderrPipe, err = cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-	e.stderrBytes = []byte{}
-	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
-	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-
-	e.StdinPipe, err = cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	err = cmd.Start()
-	if err != nil {
-		return err
-	}
-
-	e.Process, err = os.FindProcess(cmd.Process.Pid)
-	if err != nil {
-		return err
-	}
-
-	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
-	e.cmd = cmd
-	e.setupIORelay(e.stdoutPipe, e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stderrPipe, e.stderrBuffer, e.stderrLineWriter)
-
-	return nil
-}
-
-func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
-	go func() {
-		combinedDestination := io.MultiWriter(destination1, destination2)
-		// Limit to 30KB (~250 lines at 120 chars per line)
-		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
+		e.stderrPipe, err = cmd.StderrPipe()
 		if err != nil {
-			panic(err)
+			return err
 		}
 
-		if bytesWritten == 30000 {
-			e.loggerFunc("Warning: Logs exceeded allowed limit, output might be truncated.\n")
+		e.StdinPipe, err = cmd.StdinPipe()
+		if err != nil {
+			return err
 		}
 
-		e.atleastOneReadDone = true
-		e.readDone <- true
-		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
-	}()
+		return nil
+	}
+
+	return e.startWithStdioInitializer(stdStreamsInitializer, args...)
 }
 
 // Run starts the specified command, waits for it to complete and returns the
@@ -225,10 +160,127 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 	return e.Wait()
 }
 
-// Wait waits for the program to finish and results the result
+// Kill terminates the program
+func (e *Executable) Kill() error {
+	if !e.isRunning() {
+		return nil
+	}
+
+	doneChannel := make(chan error, 1)
+
+	go func() {
+		syscall.Kill(e.cmd.Process.Pid, syscall.SIGTERM)  // Don't know if this is required
+		syscall.Kill(-e.cmd.Process.Pid, syscall.SIGTERM) // Kill the whole process group
+		_, err := e.Wait()
+		doneChannel <- err
+	}()
+
+	var err error
+	select {
+	case doneError := <-doneChannel:
+		err = doneError
+	case <-time.After(2 * time.Second):
+		cmd := e.cmd
+		if cmd != nil {
+			err = fmt.Errorf("program failed to exit in 2 seconds after receiving sigterm")
+			syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)  // Don't know if this is required
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // Kill the whole process group
+
+			<-doneChannel // Wait for Wait() to return
+		}
+	}
+
+	return err
+}
+
+// stdStreamsInitializer defines how to setup stdin, stdout, and stderr pipes for a command
+type stdStreamsInitializer func(cmd *exec.Cmd) error
+
+// Start starts the specified command but does not wait for it to complete.
+// stdioSetup is a function that, when executed, will setup stdio streams for the executable
+func (e *Executable) startWithStdioInitializer(stdStreamsInitializer stdStreamsInitializer, args ...string) error {
+	if e.isRunning() {
+		return errors.New("process already in progress")
+	}
+
+	var absolutePath, resolvedPath string
+
+	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
+	// In those cases we use the path returned by LookPath.
+	resolvedPath, err := exec.LookPath(e.Path)
+	if err == nil {
+		absolutePath = resolvedPath
+	} else {
+		absolutePath, err = filepath.Abs(e.Path)
+		if err != nil {
+			return fmt.Errorf("%s not found", filepath.Base(e.Path))
+		}
+	}
+	fileInfo, err := os.Stat(absolutePath)
+	if err != nil {
+		return fmt.Errorf("%s not found", filepath.Base(e.Path))
+	}
+
+	// Check executable permission
+	if fileInfo.Mode().Perm()&0111 == 0 || fileInfo.IsDir() {
+		return fmt.Errorf("%s (resolved to %s) is not an executable file", e.Path, absolutePath)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(e.TimeoutInMilliseconds)*time.Millisecond)
+	e.ctxWithTimeout = ctx
+	e.ctxCancelFunc = cancel
+
+	cmd := exec.CommandContext(ctx, e.Path, args...)
+	cmd.Dir = e.WorkingDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	e.readDone = make(chan bool)
+	e.atleastOneReadDone = false
+
+	e.stdoutBytes = []byte{}
+	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
+	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+
+	e.stderrBytes = []byte{}
+	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
+	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+
+	// Setup standard streams using the provided function
+	err = stdStreamsInitializer(cmd)
+	if err != nil {
+		return err
+	}
+
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	// We close slave end in the parent process so it can be properly closed by the child process
+	// If this is not closed, the slave end is never closed since its has one FD reference in the parent process
+	// and the output relay will never encounter EOF while reading from this, causing the tester to hang
+	if e.ptySlave != nil {
+		e.ptySlave.Close()
+	}
+
+	e.Process, err = os.FindProcess(cmd.Process.Pid)
+	if err != nil {
+		return err
+	}
+
+	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
+	e.cmd = cmd
+	e.setupIORelay(e.stdoutPipe, e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.stderrPipe, e.stderrBuffer, e.stderrLineWriter)
+
+	return nil
+}
+
+// waitWithStdinCloser waits for the program to finish and results the result.
+// The provided closerFunc is called to close the stdin stream.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
+		e.ptyMaster.Close()
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
@@ -243,9 +295,15 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.stderrLineWriter = nil
 		e.readDone = nil
 		e.StdinPipe = nil
+		e.ptyOptions = nil
+		e.ptyMaster = nil
+		e.ptySlave = nil
 	}()
 
-	e.StdinPipe.Close()
+	// We close stdinPipe only if a pipe was used as stdin for the process
+	if e.ptyOptions == nil || e.ptyOptions.UsePipeForStdin {
+		e.StdinPipe.Close()
+	}
 
 	<-e.readDone
 	<-e.readDone
@@ -288,35 +346,21 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	return result, nil
 }
 
-// Kill terminates the program
-func (e *Executable) Kill() error {
-	if !e.isRunning() {
-		return nil
-	}
-
-	doneChannel := make(chan error, 1)
-
+func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
 	go func() {
-		syscall.Kill(e.cmd.Process.Pid, syscall.SIGTERM)  // Don't know if this is required
-		syscall.Kill(-e.cmd.Process.Pid, syscall.SIGTERM) // Kill the whole process group
-		_, err := e.Wait()
-		doneChannel <- err
-	}()
-
-	var err error
-	select {
-	case doneError := <-doneChannel:
-		err = doneError
-	case <-time.After(2 * time.Second):
-		cmd := e.cmd
-		if cmd != nil {
-			err = fmt.Errorf("program failed to exit in 2 seconds after receiving sigterm")
-			syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)  // Don't know if this is required
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // Kill the whole process group
-
-			<-doneChannel // Wait for Wait() to return
+		combinedDestination := io.MultiWriter(destination1, destination2)
+		// Limit to 30KB (~250 lines at 120 chars per line)
+		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
+		if err != nil {
+			panic(err)
 		}
-	}
 
-	return err
+		if bytesWritten == 30000 {
+			e.loggerFunc("Warning: Logs exceeded allowed limit, output might be truncated.\n")
+		}
+
+		e.atleastOneReadDone = true
+		e.readDone <- true
+		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
+	}()
 }
