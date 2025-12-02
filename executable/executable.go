@@ -125,8 +125,7 @@ func (e *Executable) Start(args ...string) error {
 	return e.startWithHooks(stdStreamsInitializer, nil, args...)
 }
 
-// Run starts the specified command, waits for it to complete and returns the
-// result.
+// Run starts the specified command, waits for it to complete and returns the result.
 func (e *Executable) Run(args ...string) (ExecutableResult, error) {
 	var err error
 
@@ -137,8 +136,7 @@ func (e *Executable) Run(args ...string) (ExecutableResult, error) {
 	return e.Wait()
 }
 
-// RunWithStdin starts the specified command, sends input, waits for it to complete and returns the
-// result.
+// RunWithStdin starts the specified command, sends input, waits for it to complete and returns the result.
 func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResult, error) {
 	var err error
 
@@ -151,6 +149,7 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 	return e.Wait()
 }
 
+// Wait waits for the program to finish and results the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	file, ok := e.stdinPipe.(*os.File)
 	if !ok {
@@ -220,7 +219,7 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 }
 
 // startWithHooks starts the specified command with stdStreamsInitializerHook, and onCmdStartSuccessHook
-// stdStreamsInitializerHook is a function responsible for setting up executable's stdin, stdout, and stderr
+// stdStreamsInitializerHook is responsible for setting up executable's stdin, stdout, and stderr
 // onCmdStartSuccessHook is run after cmd.Start() has succeeded
 func (e *Executable) startWithHooks(stdStreamsInitializerHook func(cmd *exec.Cmd) error, onCmdStartSuccessHook func(), args ...string) error {
 	if e.isRunning() {

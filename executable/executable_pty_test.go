@@ -55,7 +55,7 @@ func TestStartAndKillInPty(t *testing.T) {
 
 func TestRunInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/stdout_echo.sh")
-	result, err := e.RunWithStdinInCLI([]byte(""), "hey")
+	result, err := e.RunWithStdinInPty([]byte(""), "hey")
 	assert.NoError(t, err)
 	assert.Equal(t, "hey\r\n", string(result.Stdout))
 }
@@ -63,7 +63,7 @@ func TestRunInPty(t *testing.T) {
 func TestOutputCaptureInPty(t *testing.T) {
 	// Stdout capture
 	e := NewExecutable("./test_helpers/stdout_echo.sh")
-	result, err := e.RunWithStdinInCLI([]byte(""), "hey")
+	result, err := e.RunWithStdinInPty([]byte(""), "hey")
 
 	assert.NoError(t, err)
 	assert.Equal(t, "hey\r\n", string(result.Stdout))
@@ -71,7 +71,7 @@ func TestOutputCaptureInPty(t *testing.T) {
 
 	// Stderr capture
 	e = NewExecutable("./test_helpers/stderr_echo.sh")
-	result, err = e.RunWithStdinInCLI([]byte(""), "hey")
+	result, err = e.RunWithStdinInPty([]byte(""), "hey")
 
 	assert.NoError(t, err)
 	assert.Equal(t, "", string(result.Stdout))
@@ -80,7 +80,7 @@ func TestOutputCaptureInPty(t *testing.T) {
 
 func TestLargeOutputCaptureInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/large_echo.sh")
-	result, err := e.RunWithStdinInCLI([]byte(""), "hey")
+	result, err := e.RunWithStdinInPty([]byte(""), "hey")
 
 	assert.NoError(t, err)
 	assert.Equal(t, 30000, len(result.Stdout))
@@ -90,13 +90,13 @@ func TestLargeOutputCaptureInPty(t *testing.T) {
 func TestExitCodeInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/exit_with.sh")
 
-	result, _ := e.RunWithStdinInCLI([]byte(""), "0")
+	result, _ := e.RunWithStdinInPty([]byte(""), "0")
 	assert.Equal(t, 0, result.ExitCode)
 
-	result, _ = e.RunWithStdinInCLI([]byte(""), "1")
+	result, _ = e.RunWithStdinInPty([]byte(""), "1")
 	assert.Equal(t, 1, result.ExitCode)
 
-	result, _ = e.RunWithStdinInCLI([]byte(""), "2")
+	result, _ = e.RunWithStdinInPty([]byte(""), "2")
 	assert.Equal(t, 2, result.ExitCode)
 }
 
@@ -112,7 +112,7 @@ func TestExecutableStartNotAllowedIfInProgressInPty(t *testing.T) {
 	assertErrorContains(t, err, "process already in progress")
 
 	// Running again when in progress should throw an error
-	_, err = e.RunWithStdinInCLI([]byte(""), "0.01")
+	_, err = e.RunWithStdinInPty([]byte(""), "0.01")
 	assertErrorContains(t, err, "process already in progress")
 
 	e.Wait()
@@ -125,10 +125,10 @@ func TestExecutableStartNotAllowedIfInProgressInPty(t *testing.T) {
 func TestSuccessiveExecutionsInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/stdout_echo.sh")
 
-	result, _ := e.RunWithStdinInCLI([]byte(""), "1")
+	result, _ := e.RunWithStdinInPty([]byte(""), "1")
 	assert.Equal(t, "1\r\n", string(result.Stdout))
 
-	result, _ = e.RunWithStdinInCLI([]byte(""), "2")
+	result, _ = e.RunWithStdinInPty([]byte(""), "2")
 	assert.Equal(t, "2\r\n", string(result.Stdout))
 }
 
@@ -159,12 +159,12 @@ func TestStdinInPty(t *testing.T) {
 func TestRunWithStdinInPty(t *testing.T) {
 	e := NewExecutable("grep")
 
-	result, err := e.RunWithStdinInCLI([]byte("has cat\n"), "cat")
+	result, err := e.RunWithStdinInPty([]byte("has cat\n"), "cat")
 	assert.NoError(t, err)
 
 	assert.Equal(t, result.ExitCode, 0)
 
-	result, err = e.RunWithStdinInCLI([]byte("only dog\n"), "cat")
+	result, err = e.RunWithStdinInPty([]byte("only dog\n"), "cat")
 	assert.NoError(t, err)
 
 	assert.Equal(t, result.ExitCode, 1)
@@ -176,11 +176,11 @@ func TestRunWithStdinTimeoutInPty(t *testing.T) {
 	// because of the overhead incurred by PTY setup
 	e.TimeoutInMilliseconds = 1000
 
-	result, err := e.RunWithStdinInCLI([]byte(""), "10")
+	result, err := e.RunWithStdinInPty([]byte(""), "10")
 	assert.Error(t, err)
 	assert.Equal(t, err.Error(), "execution timed out")
 
-	result, err = e.RunWithStdinInCLI([]byte(""), "0.01") // Reduced sleep time to 10ms
+	result, err = e.RunWithStdinInPty([]byte(""), "0.01") // Reduced sleep time to 10ms
 	assert.NoError(t, err)
 	assert.Equal(t, result.ExitCode, 0)
 }
@@ -210,7 +210,7 @@ func TestTerminatesRogueProgramsInPty(t *testing.T) {
 func TestSegfaultInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/segfault.sh")
 
-	result, err := e.RunWithStdinInCLI([]byte(""), "")
+	result, err := e.RunWithStdinInPty([]byte(""), "")
 	assert.NoError(t, err)
 	assert.Equal(t, 139, result.ExitCode)
 }

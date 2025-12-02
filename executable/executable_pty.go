@@ -7,7 +7,6 @@ import (
 )
 
 // StartInPty starts the specified command with PTY support but does not wait for it to complete.
-// The PTYOptions specify which streams should use the PTY vs regular pipes.
 func (e *Executable) StartInPty(args ...string) error {
 	// Use three different PTY pairs
 	// This removes input reflection checks, and seggregates stdout and stderr messages of a process
@@ -46,9 +45,8 @@ func (e *Executable) StartInPty(args ...string) error {
 	return e.startWithHooks(stdioInitializer, postStartHook, args...)
 }
 
-// RunWithStdin starts the specified command, sends input, waits for it to complete and returns the
-// result.
-func (e *Executable) RunWithStdinInCLI(stdin []byte, args ...string) (ExecutableResult, error) {
+// RunWithStdinInPty starts the specified command in a PTY, sends input, waits for it to complete and returns the result.
+func (e *Executable) RunWithStdinInPty(stdin []byte, args ...string) (ExecutableResult, error) {
 	var err error
 
 	if err = e.StartInPty(args...); err != nil {
