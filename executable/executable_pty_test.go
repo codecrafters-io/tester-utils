@@ -1,304 +1,195 @@
 package executable
 
 import (
-	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-// createPTYOptions creates PTYOptions with stdout using PTY (most common case)
-func createPTYOptions() (*PTYOptions, error) {
-	return &PTYOptions{
-		UsePipeForStdin:  false, // Use PTY
-		UsePipeForStdout: false, // Use PTY
-		UsePipeForStderr: false, // Use PTY
-	}, nil
-}
-
-// runInPTY is a helper method to run an executable with PTY support
-func (e *Executable) runInPTY(ptyOptions *PTYOptions, args ...string) (ExecutableResult, error) {
-	if err := e.StartInPty(ptyOptions, args...); err != nil {
-		return ExecutableResult{}, err
-	}
-	return e.Wait()
-}
-
-// PTY Test Cases - Mirror of all existing tests but using PTY
-
-func TestStartInPTY(t *testing.T) {
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = NewExecutable("/blah").StartInPty(ptyOptions)
+func TestStartInPty(t *testing.T) {
+	err := NewExecutable("/blah").StartInPty()
 	assertErrorContains(t, err, "not found")
 	assertErrorContains(t, err, "blah")
 
-	ptyOptions2, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = NewExecutable("./test_helpers/not_executable.sh").StartInPty(ptyOptions2)
+	err = NewExecutable("./test_helpers/not_executable.sh").StartInPty()
 	assertErrorContains(t, err, "not an executable file")
 	assertErrorContains(t, err, "not_executable.sh")
 
-	ptyOptions3, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = NewExecutable("./test_helpers/haskell").StartInPty(ptyOptions3)
+	err = NewExecutable("./test_helpers/haskell").StartInPty()
 	assertErrorContains(t, err, "not an executable file")
 	assertErrorContains(t, err, "haskell")
 
-	ptyOptions4, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	e := NewExecutable("./test_helpers/stdout_echo.sh")
-	err = e.StartInPty(ptyOptions4)
+	err = NewExecutable("./test_helpers/stdout_echo.sh").StartInPty()
 	assert.NoError(t, err)
 }
 
-func TestStartAndKillInPTY(t *testing.T) {
-	e1 := NewExecutable("/blah")
-	ptyOptions1, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = e1.StartInPty(ptyOptions1)
+func TestStartAndKillInPty(t *testing.T) {
+	e := NewExecutable("/blah")
+	err := e.StartInPty()
 	assertErrorContains(t, err, "not found")
 	assertErrorContains(t, err, "blah")
-
-	e2 := NewExecutable("./test_helpers/not_executable.sh")
-	ptyOptions2, err := createPTYOptions()
+	err = e.Kill()
 	assert.NoError(t, err)
 
-	err = e2.StartInPty(ptyOptions2)
+	e = NewExecutable("./test_helpers/not_executable.sh")
+	err = e.StartInPty()
 	assertErrorContains(t, err, "not an executable file")
 	assertErrorContains(t, err, "not_executable.sh")
-
-	e3 := NewExecutable("./test_helpers/haskell")
-	ptyOptions3, err := createPTYOptions()
+	err = e.Kill()
 	assert.NoError(t, err)
 
-	err = e3.StartInPty(ptyOptions3)
+	e = NewExecutable("./test_helpers/haskell")
+	err = e.StartInPty()
 	assertErrorContains(t, err, "not an executable file")
 	assertErrorContains(t, err, "haskell")
-
-	e4 := NewExecutable("./test_helpers/stdout_echo.sh")
-	ptyOptions4, err := createPTYOptions()
+	err = e.Kill()
 	assert.NoError(t, err)
 
-	err = e4.StartInPty(ptyOptions4, "test")
+	e = NewExecutable("./test_helpers/stdout_echo.sh")
+	err = e.StartInPty()
 	assert.NoError(t, err)
-
-	result, err := e4.Wait()
-	assert.NoError(t, err)
-	assert.Equal(t, 0, result.ExitCode)
-}
-
-func TestKillInPTY(t *testing.T) {
-	e := NewExecutable("./test_helpers/sleep_for.sh")
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = e.StartInPty(ptyOptions, "0.5")
-	assert.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
-
 	err = e.Kill()
 	assert.NoError(t, err)
 }
 
-func TestRunInPTY(t *testing.T) {
+func TestRunInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/stdout_echo.sh")
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, err := e.runInPTY(ptyOptions, "hey")
+	result, err := e.RunWithStdinInCLI([]byte(""), "hey")
 	assert.NoError(t, err)
 	assert.Equal(t, "hey\r\n", string(result.Stdout))
 }
 
-func TestOutputCaptureInPTY(t *testing.T) {
+func TestOutputCaptureInPty(t *testing.T) {
+	// Stdout capture
 	e := NewExecutable("./test_helpers/stdout_echo.sh")
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
+	result, err := e.RunWithStdinInCLI([]byte(""), "hey")
 
-	result, err := e.runInPTY(ptyOptions, "hey")
 	assert.NoError(t, err)
 	assert.Equal(t, "hey\r\n", string(result.Stdout))
 	assert.Equal(t, "", string(result.Stderr))
 
+	// Stderr capture
 	e = NewExecutable("./test_helpers/stderr_echo.sh")
-	ptyOptions2, err := createPTYOptions()
-	assert.NoError(t, err)
+	result, err = e.RunWithStdinInCLI([]byte(""), "hey")
 
-	result, err = e.runInPTY(ptyOptions2, "hey")
 	assert.NoError(t, err)
 	assert.Equal(t, "", string(result.Stdout))
-	assert.Equal(t, "hey\n", string(result.Stderr))
+	assert.Equal(t, "hey\r\n", string(result.Stderr))
 }
 
-func TestLargeOutputCaptureInPTY(t *testing.T) {
+func TestLargeOutputCaptureInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/large_echo.sh")
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
+	result, err := e.RunWithStdinInCLI([]byte(""), "hey")
 
-	result, err := e.runInPTY(ptyOptions, "hey")
 	assert.NoError(t, err)
 	assert.Equal(t, 30000, len(result.Stdout))
-	assert.Equal(t, "blah\n", string(result.Stderr))
+	assert.Equal(t, "blah\r\n", string(result.Stderr))
 }
 
-func TestExitCodeInPTY(t *testing.T) {
+func TestExitCodeInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/exit_with.sh")
 
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, _ := e.runInPTY(ptyOptions, "0")
+	result, _ := e.RunWithStdinInCLI([]byte(""), "0")
 	assert.Equal(t, 0, result.ExitCode)
 
-	ptyOptions2, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, _ = e.runInPTY(ptyOptions2, "1")
+	result, _ = e.RunWithStdinInCLI([]byte(""), "1")
 	assert.Equal(t, 1, result.ExitCode)
 
-	ptyOptions3, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, _ = e.runInPTY(ptyOptions3, "2")
+	result, _ = e.RunWithStdinInCLI([]byte(""), "2")
 	assert.Equal(t, 2, result.ExitCode)
 }
 
-func TestExecutableStartInPTYNotAllowedIfInProgress(t *testing.T) {
+func TestExecutableStartNotAllowedIfInProgressInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/sleep_for.sh")
 
-	ptyOptions, err := createPTYOptions()
+	// Run once
+	err := e.StartInPty("0.01")
 	assert.NoError(t, err)
 
-	err = e.StartInPty(ptyOptions, "0.01")
-	assert.NoError(t, err)
-
-	ptyOptions2, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = e.StartInPty(ptyOptions2, "0.01")
+	// Starting again when in progress should throw an error
+	err = e.StartInPty("0.01")
 	assertErrorContains(t, err, "process already in progress")
 
-	ptyOptions3, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	_, err = e.runInPTY(ptyOptions3, "0.01")
+	// Running again when in progress should throw an error
+	_, err = e.RunWithStdinInCLI([]byte(""), "0.01")
 	assertErrorContains(t, err, "process already in progress")
 
 	e.Wait()
 
-	ptyOptions4, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = e.StartInPty(ptyOptions4, "0.01")
+	// Running again once finished should be fine
+	err = e.StartInPty("0.01")
 	assert.NoError(t, err)
 }
 
-func TestSuccessiveExecutionsInPTY(t *testing.T) {
+func TestSuccessiveExecutionsInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/stdout_echo.sh")
 
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, _ := e.runInPTY(ptyOptions, "1")
+	result, _ := e.RunWithStdinInCLI([]byte(""), "1")
 	assert.Equal(t, "1\r\n", string(result.Stdout))
 
-	ptyOptions2, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, _ = e.runInPTY(ptyOptions2, "2")
+	result, _ = e.RunWithStdinInCLI([]byte(""), "2")
 	assert.Equal(t, "2\r\n", string(result.Stdout))
 }
 
-func TestHasExitedInPTY(t *testing.T) {
+func TestHasExitedInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/sleep_for.sh")
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
 
-	e.StartInPty(ptyOptions, "0.1")
-	assert.False(t, e.HasExited())
+	e.StartInPty("0.1")
+	assert.False(t, e.HasExited(), "Expected to not have exited")
 
 	time.Sleep(150 * time.Millisecond)
-	assert.True(t, e.HasExited())
+	assert.True(t, e.HasExited(), "Expected to have exited")
 }
 
-func TestStdinInPTY(t *testing.T) {
+func TestStdinInPty(t *testing.T) {
 	e := NewExecutable("grep")
 
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
+	e.StartInPty("cat")
+	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.StartInPty(ptyOptions, "cat")
-	assert.False(t, e.HasExited())
+	e.stdinPipe.Write([]byte("has cat"))
+	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.StdinPipe.Write([]byte("has cat"))
-	assert.False(t, e.HasExited())
-
-	e.StdinPipe.Close()
+	e.stdinPipe.Close()
 	time.Sleep(100 * time.Millisecond)
-	assert.True(t, e.HasExited())
+	assert.True(t, e.HasExited(), "Expected to have exited")
 }
 
-func TestRunWithStdinInPTY(t *testing.T) {
+func TestRunWithStdinInPty(t *testing.T) {
 	e := NewExecutable("grep")
 
-	ptyOptions, err := createPTYOptions()
+	result, err := e.RunWithStdinInCLI([]byte("has cat\n"), "cat")
 	assert.NoError(t, err)
 
-	err = e.StartInPty(ptyOptions, "cat")
+	assert.Equal(t, result.ExitCode, 0)
+
+	result, err = e.RunWithStdinInCLI([]byte("only dog\n"), "cat")
 	assert.NoError(t, err)
 
-	e.StdinPipe.Write([]byte("has cat"))
-	result, err := e.Wait()
-	assert.NoError(t, err)
-	assert.Equal(t, 0, result.ExitCode)
-
-	e = NewExecutable("grep")
-	ptyOptions2, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = e.StartInPty(ptyOptions2, "cat")
-	assert.NoError(t, err)
-
-	e.StdinPipe.Write([]byte("only dog"))
-	result, err = e.Wait()
-	assert.NoError(t, err)
-	assert.Equal(t, 1, result.ExitCode)
+	assert.Equal(t, result.ExitCode, 1)
 }
 
-func TestRunWithStdinTimeoutInPTY(t *testing.T) {
+func TestRunWithStdinTimeoutInPty(t *testing.T) {
 	e := NewExecutable("sleep")
-	e.TimeoutInMilliseconds = 50
+	// Use larger timeout as compared to non-pty case
+	// because of the overhead incurred by PTY setup
+	e.TimeoutInMilliseconds = 1000
 
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, err := e.runInPTY(ptyOptions, "10")
+	result, err := e.RunWithStdinInCLI([]byte(""), "10")
 	assert.Error(t, err)
-	assert.Equal(t, "execution timed out", err.Error())
+	assert.Equal(t, err.Error(), "execution timed out")
 
-	ptyOptions2, err := createPTYOptions()
+	result, err = e.RunWithStdinInCLI([]byte(""), "0.01") // Reduced sleep time to 10ms
 	assert.NoError(t, err)
-
-	result, err = e.runInPTY(ptyOptions2, "0.02")
-	assert.NoError(t, err)
-	assert.Equal(t, 0, result.ExitCode)
+	assert.Equal(t, result.ExitCode, 0)
 }
 
-func TestTerminatesRogueProgramsInPTY(t *testing.T) {
+// Rogue == doesn't respond to SIGTERM
+func TestTerminatesRogueProgramsInPty(t *testing.T) {
 	e := NewExecutable("bash")
 
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = e.StartInPty(ptyOptions, "-c", "trap '' SIGTERM SIGINT; sleep 60")
+	err := e.StartInPty("-c", "trap '' SIGTERM SIGINT; sleep 60")
 	assert.NoError(t, err)
 
 	time.Sleep(100 * time.Millisecond)
@@ -306,10 +197,8 @@ func TestTerminatesRogueProgramsInPTY(t *testing.T) {
 	err = e.Kill()
 	assert.EqualError(t, err, "program failed to exit in 2 seconds after receiving sigterm")
 
-	ptyOptions2, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	err = e.StartInPty(ptyOptions2, "-c", "trap '' SIGTERM SIGINT; sleep 60")
+	// Starting again shouldn't throw an error
+	err = e.StartInPty("-c", "trap '' SIGTERM SIGINT; sleep 60")
 	assert.NoError(t, err)
 
 	time.Sleep(100 * time.Millisecond)
@@ -318,39 +207,10 @@ func TestTerminatesRogueProgramsInPTY(t *testing.T) {
 	assert.EqualError(t, err, "program failed to exit in 2 seconds after receiving sigterm")
 }
 
-func TestSegfaultInPTY(t *testing.T) {
+func TestSegfaultInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/segfault.sh")
 
-	ptyOptions, err := createPTYOptions()
-	assert.NoError(t, err)
-
-	result, err := e.runInPTY(ptyOptions)
+	result, err := e.RunWithStdinInCLI([]byte(""), "")
 	assert.NoError(t, err)
 	assert.Equal(t, 139, result.ExitCode)
-}
-
-func TestStartInPTYPanicCondition(t *testing.T) {
-	e := NewExecutable("./test_helpers/stdout_echo.sh")
-
-	masterR, slaveW, err := os.Pipe()
-	assert.NoError(t, err)
-	defer masterR.Close()
-	defer slaveW.Close()
-
-	ptyOptions := &PTYOptions{
-
-		UsePipeForStdin:  true,
-		UsePipeForStdout: true,
-		UsePipeForStderr: true,
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			assert.Contains(t, r.(string), "StartInTTY called with UsePipe for all three streams")
-		} else {
-			t.Error("Expected panic but didn't occur")
-		}
-	}()
-
-	e.StartInPty(ptyOptions, "test")
 }

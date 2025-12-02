@@ -8,76 +8,54 @@ import (
 
 // StartInPty starts the specified command with PTY support but does not wait for it to complete.
 // The PTYOptions specify which streams should use the PTY vs regular pipes.
-func (e *Executable) StartInPty(ptyOptions *PTYOptions, args ...string) error {
-	if ptyOptions.UsePipeForStdin && ptyOptions.UsePipeForStdout && ptyOptions.UsePipeForStderr {
-		panic("Codecrafters Internal Error - StartInTTY called with UsePipe for all three streams")
+func (e *Executable) StartInPty(args ...string) error {
+	// Use three different PTY pairs
+	// This removes input reflection checks, and seggregates stdout and stderr messages of a process
+	stdinMaster, stdinSlave, err := pty.Open()
+	if err != nil {
+		return err
 	}
 
-	master, slave, err := pty.Open()
+	stdoutMaster, stdoutSlave, err := pty.Open()
+	if err != nil {
+		return err
+	}
+
+	stderrMaster, stderrSlave, err := pty.Open()
 	if err != nil {
 		return err
 	}
 
 	stdioInitializer := func(cmd *exec.Cmd) error {
-		var err error
+		cmd.Stdin = stdinSlave
+		cmd.Stdout = stdoutSlave
+		cmd.Stderr = stderrSlave
 
-		// Setup stdout
-		if ptyOptions.UsePipeForStdout {
-			e.stdoutPipe, err = cmd.StdoutPipe()
-			if err != nil {
-				return err
-			}
-		} else {
-			cmd.Stdout = slave
-			e.stdoutPipe = master
-		}
-
-		// Setup stderr
-		if ptyOptions.UsePipeForStderr {
-			e.stderrPipe, err = cmd.StderrPipe()
-			if err != nil {
-				return err
-			}
-		} else {
-			cmd.Stderr = slave
-			e.stderrPipe = master
-		}
-
-		// Setup stdin
-		if ptyOptions.UsePipeForStdin {
-			e.StdinPipe, err = cmd.StdinPipe()
-			if err != nil {
-				return err
-			}
-		} else {
-			cmd.Stdin = slave
-			e.StdinPipe = master
-		}
-
-		e.ptyMaster = master
-		e.ptySlave = slave
+		e.stdinPipe = stdinMaster
+		e.stdoutPipe = stdoutMaster
+		e.stderrPipe = stderrMaster
 		return nil
 	}
 
-	return e.startWithStdioInitializer(stdioInitializer, args...)
+	postStartHook := func() {
+		stdinSlave.Close()
+		stdoutSlave.Close()
+		stderrSlave.Close()
+	}
+
+	return e.startWithHooks(stdioInitializer, postStartHook, args...)
 }
 
-// RunInPty
-func (e *Executable) RunInPty(ptyOptions PTYOptions, args ...string) (ExecutableResult, error) {
-	return e.RunInPtyWithStdin(ptyOptions, nil, args...)
-}
-
-// RunInPtyWithStdin
-func (e *Executable) RunInPtyWithStdin(ptyOptions PTYOptions, stdin []byte, args ...string) (ExecutableResult, error) {
+// RunWithStdin starts the specified command, sends input, waits for it to complete and returns the
+// result.
+func (e *Executable) RunWithStdinInCLI(stdin []byte, args ...string) (ExecutableResult, error) {
 	var err error
 
-	if err = e.StartInPty(&ptyOptions, args...); err != nil {
+	if err = e.StartInPty(args...); err != nil {
 		return ExecutableResult{}, err
 	}
 
-	if stdin != nil {
-		e.ptyMaster.Write(stdin)
-	}
+	e.stdinPipe.Write(stdin)
 
 	return e.Wait()
 }

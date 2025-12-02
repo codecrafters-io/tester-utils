@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/codecrafters-io/tester-utils/linewriter"
+	"github.com/mattn/go-isatty"
 )
 
 // Executable represents a program that can be executed
@@ -30,7 +31,7 @@ type Executable struct {
 
 	Process *os.Process
 
-	StdinPipe io.WriteCloser
+	stdinPipe io.WriteCloser
 
 	// These are set & removed together
 	atleastOneReadDone bool
@@ -44,10 +45,6 @@ type Executable struct {
 	stdoutLineWriter   *linewriter.LineWriter
 	stderrLineWriter   *linewriter.LineWriter
 	readDone           chan bool
-	// Used to keep track whether the process was spawned using PTY
-	ptyOptions *PTYOptions
-	ptyMaster  *os.File
-	ptySlave   *os.File
 }
 
 // ExecutableResult holds the result of an executable run
@@ -55,12 +52,6 @@ type ExecutableResult struct {
 	Stdout   []byte
 	Stderr   []byte
 	ExitCode int
-}
-
-type PTYOptions struct {
-	UsePipeForStdin  bool
-	UsePipeForStdout bool
-	UsePipeForStderr bool
 }
 
 type loggerWriter struct {
@@ -123,7 +114,7 @@ func (e *Executable) Start(args ...string) error {
 			return err
 		}
 
-		e.StdinPipe, err = cmd.StdinPipe()
+		e.stdinPipe, err = cmd.StdinPipe()
 		if err != nil {
 			return err
 		}
@@ -131,7 +122,7 @@ func (e *Executable) Start(args ...string) error {
 		return nil
 	}
 
-	return e.startWithStdioInitializer(stdStreamsInitializer, args...)
+	return e.startWithHooks(stdStreamsInitializer, nil, args...)
 }
 
 // Run starts the specified command, waits for it to complete and returns the
@@ -155,9 +146,25 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 		return ExecutableResult{}, err
 	}
 
-	e.StdinPipe.Write(stdin)
+	e.stdinPipe.Write(stdin)
 
 	return e.Wait()
+}
+
+func (e *Executable) Wait() (ExecutableResult, error) {
+	file, ok := e.stdinPipe.(*os.File)
+	if !ok {
+		panic("stdinPipe is not *os.File")
+	}
+
+	if !isatty.IsTerminal(file.Fd()) {
+		return e.waitWithEofSignaler(func() { e.stdinPipe.Close() })
+	}
+
+	// Write VEOF (equivalent of Ctrl-D to terminal)
+	return e.waitWithEofSignaler(func() {
+		e.stdinPipe.Write([]byte{4, 4})
+	})
 }
 
 // Kill terminates the program
@@ -193,12 +200,29 @@ func (e *Executable) Kill() error {
 	return err
 }
 
-// stdStreamsInitializer defines how to setup stdin, stdout, and stderr pipes for a command
-type stdStreamsInitializer func(cmd *exec.Cmd) error
+func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
+	go func() {
+		combinedDestination := io.MultiWriter(destination1, destination2)
+		// Limit to 30KB (~250 lines at 120 chars per line)
+		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
+		if err != nil {
+			panic(err)
+		}
 
-// Start starts the specified command but does not wait for it to complete.
-// stdioSetup is a function that, when executed, will setup stdio streams for the executable
-func (e *Executable) startWithStdioInitializer(stdStreamsInitializer stdStreamsInitializer, args ...string) error {
+		if bytesWritten == 30000 {
+			e.loggerFunc("Warning: Logs exceeded allowed limit, output might be truncated.\n")
+		}
+
+		e.atleastOneReadDone = true
+		e.readDone <- true
+		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
+	}()
+}
+
+// startWithHooks starts the specified command with stdStreamsInitializerHook, and onCmdStartSuccessHook
+// stdStreamsInitializerHook is a function responsible for setting up executable's stdin, stdout, and stderr
+// onCmdStartSuccessHook is run after cmd.Start() has succeeded
+func (e *Executable) startWithHooks(stdStreamsInitializerHook func(cmd *exec.Cmd) error, onCmdStartSuccessHook func(), args ...string) error {
 	if e.isRunning() {
 		return errors.New("process already in progress")
 	}
@@ -245,7 +269,7 @@ func (e *Executable) startWithStdioInitializer(stdStreamsInitializer stdStreamsI
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup standard streams using the provided function
-	err = stdStreamsInitializer(cmd)
+	err = stdStreamsInitializerHook(cmd)
 	if err != nil {
 		return err
 	}
@@ -255,11 +279,8 @@ func (e *Executable) startWithStdioInitializer(stdStreamsInitializer stdStreamsI
 		return err
 	}
 
-	// We close slave end in the parent process so it can be properly closed by the child process
-	// If this is not closed, the slave end is never closed since its has one FD reference in the parent process
-	// and the output relay will never encounter EOF while reading from this, causing the tester to hang
-	if e.ptySlave != nil {
-		e.ptySlave.Close()
+	if onCmdStartSuccessHook != nil {
+		onCmdStartSuccessHook()
 	}
 
 	e.Process, err = os.FindProcess(cmd.Process.Pid)
@@ -275,12 +296,11 @@ func (e *Executable) startWithStdioInitializer(stdStreamsInitializer stdStreamsI
 	return nil
 }
 
-// waitWithStdinCloser waits for the program to finish and results the result.
-// The provided closerFunc is called to close the stdin stream.
-func (e *Executable) Wait() (ExecutableResult, error) {
+// waitWithEofSignaler waits for the program to finish and results the result.
+// The provided signaler function is responsible for sending EOF to the stdin of the process
+func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
-		e.ptyMaster.Close()
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
@@ -294,16 +314,10 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.stdoutLineWriter = nil
 		e.stderrLineWriter = nil
 		e.readDone = nil
-		e.StdinPipe = nil
-		e.ptyOptions = nil
-		e.ptyMaster = nil
-		e.ptySlave = nil
+		e.stdinPipe = nil
 	}()
 
-	// We close stdinPipe only if a pipe was used as stdin for the process
-	if e.ptyOptions == nil || e.ptyOptions.UsePipeForStdin {
-		e.StdinPipe.Close()
-	}
+	eofSignaler()
 
 	<-e.readDone
 	<-e.readDone
@@ -344,23 +358,4 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		return ExecutableResult{}, fmt.Errorf("execution timed out")
 	}
 	return result, nil
-}
-
-func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
-	go func() {
-		combinedDestination := io.MultiWriter(destination1, destination2)
-		// Limit to 30KB (~250 lines at 120 chars per line)
-		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
-		if err != nil {
-			panic(err)
-		}
-
-		if bytesWritten == 30000 {
-			e.loggerFunc("Warning: Logs exceeded allowed limit, output might be truncated.\n")
-		}
-
-		e.atleastOneReadDone = true
-		e.readDone <- true
-		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
-	}()
 }
