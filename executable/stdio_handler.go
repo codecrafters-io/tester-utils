@@ -195,7 +195,7 @@ func (h *ptyStdioHandler) CleanupStreamsAfterWait() error {
 }
 
 func (h *ptyStdioHandler) WriteToStdin(input []byte) (int, error) {
-	duplicatedInput := make([]byte, len(input)+1)
+	duplicatedInput := make([]byte, len(input))
 	copy(duplicatedInput, input)
 	inputWithNewline := append(duplicatedInput, byte('\n'))
 	return h.stdinMaster.Write(inputWithNewline)
