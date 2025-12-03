@@ -54,6 +54,7 @@ func (e *Executable) StartInPty(args ...string) error {
 		stdinMaster.Close()
 		stdoutMaster.Close()
 		stderrMaster.Close()
+		return err
 	}
 
 	return nil

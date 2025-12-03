@@ -263,6 +263,12 @@ func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, 
 		e.stdoutLineWriter = nil
 		e.stderrLineWriter = nil
 		e.readDone = nil
+
+		// We don't close stdin stream while signaling EOF, so we close it during cleanup
+		if isATty(e.stdinStream) {
+			e.stdinStream.Close()
+		}
+
 		e.stdinStream = nil
 	}()
 
