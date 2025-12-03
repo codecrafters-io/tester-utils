@@ -158,18 +158,14 @@ func (e *Executable) Start(args ...string) error {
 		return err
 	}
 
-	defer func() {
-		if err != nil {
-			onStartFailureCleanup()
-			return
-		}
-		onStartSuccessCleanup()
-	}()
-
 	err = cmd.Start()
+
 	if err != nil {
+		onStartFailureCleanup()
 		return err
 	}
+
+	onStartSuccessCleanup()
 
 	e.Process, err = os.FindProcess(cmd.Process.Pid)
 	if err != nil {
@@ -400,14 +396,11 @@ func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onStartSuccessCleanup 
 		}
 	}
 
-	// Close all pipes if Start() fails
+	// Close all master and slaves if Start() fails
 	onStartFailureCleanup = func() {
 		if e.ShouldusePTY {
 			ptyResources.closeAll()
 		} else {
-			e.stdoutStream.Close()
-			e.stderrStream.Close()
-			e.stdinStream.Close()
 		}
 	}
 
