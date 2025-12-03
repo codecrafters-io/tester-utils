@@ -98,7 +98,7 @@ func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
 }
 
-// Wait waits for the program to finish and results the result.
+// Wait waits for the program to finish and returns the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	// Closes the stdin stream
 	stdinCloser := func() {
@@ -157,7 +157,7 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 		// Limit to 30KB (~250 lines at 120 chars per line)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 		if err != nil {
-			// In linux, if the source is a terminal device, read(2) results in EIO when the process has exitted and closed its slave end
+			// In linux, if the source is a terminal device, read(2) results in EIO when the process has exited and closed its slave end
 			// (Source: The Linux Programming Interface Appendix F - 64.1)
 			// This can be safely ignored
 			if !(isATty(source) && errors.Is(err, syscall.EIO)) {
@@ -253,7 +253,7 @@ func (e *Executable) startWithCallbacks(stdStreamsInitializerCallback func(cmd *
 	return nil
 }
 
-// waitWithCallbacks waits for the program to finish and results the result.
+// waitWithCallbacks waits for the program to finish and returns the result.
 // The provided signaler function is responsible for sending EOF to the stdin of the process
 func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, error) {
 	defer func() {
