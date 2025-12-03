@@ -14,7 +14,6 @@ import (
 	"syscall"
 
 	"github.com/codecrafters-io/tester-utils/linewriter"
-	"github.com/mattn/go-isatty"
 )
 
 // Executable represents a program that can be executed
@@ -101,12 +100,7 @@ func (e *Executable) HasExited() bool {
 
 // Wait waits for the program to finish and results the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
-	file, ok := e.stdinStream.(*os.File)
-	if !ok {
-		panic("stdinStream is not *os.File")
-	}
-
-	if !isatty.IsTerminal(file.Fd()) {
+	if !(isATty(e.stdinStream)) {
 		return e.waitWithEofSignaler(func() { e.stdinStream.Close() })
 	}
 
@@ -158,7 +152,7 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 			// In linux, if the source is a terminal device, io.Copy results in EIO when the process has exitted and closed its slave end
 			// (Source: The Linux Programming Interface Appendix F - 64.1)
 			// This can be safely ignored
-			if !(isReaderATty(source) && errors.Is(err, syscall.EIO)) {
+			if !(isATty(source) && errors.Is(err, syscall.EIO)) {
 				panic(err)
 			}
 		}
@@ -313,13 +307,4 @@ func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, 
 		return ExecutableResult{}, fmt.Errorf("execution timed out")
 	}
 	return result, nil
-}
-
-func isReaderATty(r io.Reader) bool {
-	file, ok := r.(*os.File)
-	if !ok {
-		return false
-	}
-
-	return isatty.IsTerminal(file.Fd())
 }

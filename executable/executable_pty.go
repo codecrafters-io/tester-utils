@@ -17,11 +17,17 @@ func (e *Executable) StartInPty(args ...string) error {
 
 	stdoutMaster, stdoutSlave, err := pty.Open()
 	if err != nil {
+		stdinMaster.Close()
+		stdinSlave.Close()
 		return err
 	}
 
 	stderrMaster, stderrSlave, err := pty.Open()
 	if err != nil {
+		stdinMaster.Close()
+		stdinSlave.Close()
+		stdoutMaster.Close()
+		stdoutSlave.Close()
 		return err
 	}
 
@@ -42,7 +48,15 @@ func (e *Executable) StartInPty(args ...string) error {
 		stderrSlave.Close()
 	}
 
-	return e.startWithCallbacks(stdioInitializer, slaveCloserCallback, args...)
+	err = e.startWithCallbacks(stdioInitializer, slaveCloserCallback, args...)
+
+	if err != nil {
+		stdinMaster.Close()
+		stdoutMaster.Close()
+		stderrMaster.Close()
+	}
+
+	return nil
 }
 
 // RunWithStdinInPty starts the specified command in a PTY, sends input, waits for it to complete and returns the result.
