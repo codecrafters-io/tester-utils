@@ -196,7 +196,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stdioHandler.CloseDuplicatedStreamsOfChild()
 
 	if err != nil {
-		e.stdioHandler.CleanupStreamsOnFailedStart()
+		e.stdioHandler.CleanupStreamsOnStartFailure()
 		return err
 	}
 
@@ -266,7 +266,7 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
 		// We finally close the FDs used by the parent
-		e.stdioHandler.CloseParentsEndOfChildStreams()
+		e.stdioHandler.CleanupStreamsAfterWait()
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil

@@ -28,22 +28,22 @@ type stdioHandler interface {
 	// GetStderr returns stderr on the parent's end
 	GetStderr() io.ReadCloser
 
-	// Sets up child process' stdio streams
+	// SetupStreams sets up child process' stdio streams
 	SetupStreams(cmd *exec.Cmd) error
 
-	// closeStreamsOfChild closes the streams on the parent which were duplicated for the child's stdio streams
+	// CloseStreamsOfChild closes the streams on the parent which were duplicated for the child's stdio streams
 	CloseDuplicatedStreamsOfChild() error
 
-	// cleanupOnFailedStart cleans up any FDs on the parent side if *exec.cmd.Start() fails
-	CleanupStreamsOnFailedStart() error
+	// CleanupStreamsOnStartFailure cleans up any FDs on the parent side if *exec.cmd.Start() fails
+	CleanupStreamsOnStartFailure() error
 
-	// CloseParentsEndOfChildStreams closes the parent's end of the child's stdio streams
-	CloseParentsEndOfChildStreams() error
+	// CleanupStreamsAfterWait closes the parent's end of the child's stdio streams
+	CleanupStreamsAfterWait() error
 
-	// writeToStdinStream writes to child's stdin stream
+	// WriteToStdinStream writes to child's stdin stream
 	WriteToStdin(input []byte) (int, error)
 
-	// Sends EOF to the child's stdin stream
+	// SendEofToStdin sends EOF to the child's stdin stream
 	SendEofToStdin() error
 }
 
@@ -52,7 +52,6 @@ type pipeStdioHandler struct {
 	stdinPipe  io.WriteCloser
 	stdoutPipe io.ReadCloser
 	stderrPipe io.ReadCloser
-	wasEofSent bool
 }
 
 func (h *pipeStdioHandler) GetStdin() io.WriteCloser {
@@ -90,20 +89,30 @@ func (h *pipeStdioHandler) CloseDuplicatedStreamsOfChild() error {
 	return nil
 }
 
-func (h *pipeStdioHandler) CleanupStreamsOnFailedStart() error {
+func (h *pipeStdioHandler) CleanupStreamsOnStartFailure() error {
 	if err := h.stdoutPipe.Close(); err != nil {
 		return err
 	}
+	h.stdoutPipe = nil
 
 	if err := h.stderrPipe.Close(); err != nil {
 		return err
 	}
+	h.stderrPipe = nil
 
-	return h.stdinPipe.Close()
+	if err := h.stdinPipe.Close(); err != nil {
+		return err
+	}
+	h.stdinPipe = nil
+
+	return nil
 }
 
-func (h *pipeStdioHandler) CloseParentsEndOfChildStreams() error {
-	// No implementation; this is automatically handled by *exec.Cmd.Wait()
+func (h *pipeStdioHandler) CleanupStreamsAfterWait() error {
+	// No need to close pipes; this is automatically handled by *exec.Cmd.Wait()
+	h.stdinPipe = nil
+	h.stdoutPipe = nil
+	h.stderrPipe = nil
 	return nil
 }
 
@@ -116,7 +125,6 @@ func (h *pipeStdioHandler) SendEofToStdin() error {
 		return err
 	}
 
-	h.wasEofSent = true
 	return nil
 }
 
@@ -156,12 +164,23 @@ func (h *ptyStdioHandler) CloseDuplicatedStreamsOfChild() error {
 	return h.closeSlaves()
 }
 
-func (h *ptyStdioHandler) CleanupStreamsOnFailedStart() error {
-	return h.closeMasters()
+func (h *ptyStdioHandler) CleanupStreamsOnStartFailure() error {
+	if err := h.closeMasters(); err != nil {
+		return err
+	}
+
+	h.resetAll()
+	return nil
 }
 
-func (h *ptyStdioHandler) CloseParentsEndOfChildStreams() error {
-	return h.closeMasters()
+func (h *ptyStdioHandler) CleanupStreamsAfterWait() error {
+	if err := h.closeMasters(); err != nil {
+		return err
+	}
+
+	h.resetAll()
+
+	return nil
 }
 
 func (h *ptyStdioHandler) WriteToStdin(input []byte) (int, error) {
@@ -172,6 +191,15 @@ func (h *ptyStdioHandler) WriteToStdin(input []byte) (int, error) {
 func (h *ptyStdioHandler) SendEofToStdin() error {
 	_, err := h.stdinMaster.Write([]byte{4})
 	return err
+}
+
+func (h *ptyStdioHandler) resetAll() {
+	h.stdinMaster = nil
+	h.stdoutMaster = nil
+	h.stderrMaster = nil
+	h.stdinSlave = nil
+	h.stdoutSlave = nil
+	h.stderrSlave = nil
 }
 
 // openAll attempts to open all three PTY pairs.
@@ -187,12 +215,14 @@ func (r *ptyStdioHandler) openAll() error {
 	r.stdoutMaster, r.stdoutSlave, err = pty.Open()
 	if err != nil {
 		r.closeAll()
+		r.resetAll()
 		return err
 	}
 
 	r.stderrMaster, r.stderrSlave, err = pty.Open()
 	if err != nil {
 		r.closeAll()
+		r.resetAll()
 		return err
 	}
 
