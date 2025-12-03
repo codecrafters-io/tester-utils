@@ -1,7 +1,6 @@
 package executable
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -89,21 +88,24 @@ func (h *pipeStdioHandler) CloseDuplicatedStreamsOfChild() error {
 	return nil
 }
 
-func (h *pipeStdioHandler) CleanupStreamsOnStartFailure() error {
-	if err := h.stdoutPipe.Close(); err != nil {
-		return err
-	}
-	h.stdoutPipe = nil
+func (h *pipeStdioHandler) CleanupStreamsOnStartFailure() (err error) {
+	defer func() {
+		h.stdoutPipe = nil
+		h.stderrPipe = nil
+		h.stdinPipe = nil
+	}()
 
-	if err := h.stderrPipe.Close(); err != nil {
+	if err = h.stdoutPipe.Close(); err != nil {
 		return err
 	}
-	h.stderrPipe = nil
 
-	if err := h.stdinPipe.Close(); err != nil {
+	if err = h.stderrPipe.Close(); err != nil {
 		return err
 	}
-	h.stdinPipe = nil
+
+	if err = h.stdinPipe.Close(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -185,7 +187,8 @@ func (h *ptyStdioHandler) CleanupStreamsAfterWait() error {
 
 func (h *ptyStdioHandler) WriteToStdin(input []byte) (int, error) {
 	// Terminal based input are only flushed after sending additional \n character
-	return h.stdinMaster.Write(fmt.Appendf(input, "\n"))
+	inputWithNewline := append(input, byte('\n'))
+	return h.stdinMaster.Write(inputWithNewline)
 }
 
 func (h *ptyStdioHandler) SendEofToStdin() error {

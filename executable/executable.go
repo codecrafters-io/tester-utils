@@ -191,12 +191,18 @@ func (e *Executable) Start(args ...string) error {
 	err = cmd.Start()
 
 	// This can be placed in e.Wait()
-	// However, cmd.Start() closes duplicated streams as soon as the process starts
-	// So, we repeat the pattern
+	// As cmd.Start() closes duplicated streams as soon as the process start
+	// this is placed here to repeat the pattern
 	e.stdioHandler.CloseDuplicatedStreamsOfChild()
 
+	// If an error is encountered at any point here onwards, clean up streams
+	defer func() {
+		if err != nil {
+			e.stdioHandler.CleanupStreamsOnStartFailure()
+		}
+	}()
+
 	if err != nil {
-		e.stdioHandler.CleanupStreamsOnStartFailure()
 		return err
 	}
 
