@@ -32,7 +32,7 @@ type Executable struct {
 
 	// MemoryLimitInBytes sets the maximum memory the process can use (Linux only).
 	// If exceeded, the process will be killed and an error will be returned.
-	// Defaults to 1GB. Set to 0 to disable memory limiting.
+	// Defaults to 2GB. Set to 0 to disable memory limiting.
 	MemoryLimitInBytes int64
 
 	Process *os.Process
@@ -87,8 +87,8 @@ func (e *Executable) Clone() *Executable {
 	}
 }
 
-// DefaultMemoryLimitInBytes is the default memory limit (1GB)
-const DefaultMemoryLimitInBytes int64 = 1 * 1024 * 1024 * 1024
+// DefaultMemoryLimitInBytes is the default memory limit (2GB)
+const DefaultMemoryLimitInBytes int64 = 2 * 1024 * 1024 * 1024
 
 // NewExecutable returns an Executable
 func NewExecutable(path string) *Executable {
