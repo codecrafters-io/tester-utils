@@ -152,45 +152,19 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup standard streams
-	var ptyResources ptyResources
+	onCmdStartSuccessCleanup, onCmdStartFailureCleanup, err := e.setupStandardStreams(cmd)
 
-	if e.ShouldusePTY {
-		if err := ptyResources.openAll(); err != nil {
-			return err
-		}
-
-		// Cleanup FDs if Start does not succeed
-		defer func() {
-			if err != nil {
-				ptyResources.closeAll()
-			}
-		}()
-
-		// Assign master and slave ends to parent and child respectively
-		cmd.Stdout = ptyResources.stdoutSlave
-		cmd.Stderr = ptyResources.stderrSlave
-		cmd.Stdin = ptyResources.stdinSlave
-		e.stdoutStream = ptyResources.stdoutMaster
-		e.stderrStream = ptyResources.stderrMaster
-		e.stdinStream = ptyResources.stdinMaster
-
-	} else {
-		// Setup standard streams using the provided function
-		e.stdoutStream, err = cmd.StdoutPipe()
-		if err != nil {
-			return err
-		}
-
-		e.stderrStream, err = cmd.StderrPipe()
-		if err != nil {
-			return err
-		}
-
-		e.stdinStream, err = cmd.StdinPipe()
-		if err != nil {
-			return err
-		}
+	if err != nil {
+		return err
 	}
+
+	defer func() {
+		if err != nil {
+			onCmdStartFailureCleanup()
+			return
+		}
+		onCmdStartSuccessCleanup()
+	}()
 
 	err = cmd.Start()
 	if err != nil {
@@ -200,11 +174,6 @@ func (e *Executable) Start(args ...string) error {
 	e.Process, err = os.FindProcess(cmd.Process.Pid)
 	if err != nil {
 		return err
-	}
-
-	// Close slave ends of pty pairs from parent process
-	if e.ShouldusePTY {
-		ptyResources.closeSlaves()
 	}
 
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
@@ -377,4 +346,70 @@ func (e *Executable) Kill() error {
 	}
 
 	return err
+}
+
+// setupStandardStreams connects process' stdin, stdout, and stderr with pipe/pty depending on whether or not e.ShouldTTY is set
+// onSuccessCleanup should be run if the executable successfully starts
+// onFailure should be run if the executable fails to start properly
+// err is returned if an error is encountered while setting up the streams
+func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessCleanup func(), onCmdStartFailureCleanup func(), err error) {
+	var ptyResources ptyResources
+
+	if e.ShouldusePTY {
+		if err = ptyResources.openAll(); err != nil {
+			return nil, nil, err
+		}
+
+		// Cleanup FDs if Start does not succeed
+		defer func() {
+			if err != nil {
+				ptyResources.closeAll()
+			}
+		}()
+
+		// Assign master and slave ends to parent and child respectively
+		cmd.Stdout = ptyResources.stdoutSlave
+		cmd.Stderr = ptyResources.stderrSlave
+		cmd.Stdin = ptyResources.stdinSlave
+		e.stdoutStream = ptyResources.stdoutMaster
+		e.stderrStream = ptyResources.stderrMaster
+		e.stdinStream = ptyResources.stdinMaster
+
+	} else {
+		// Setup standard streams using the provided function
+		e.stdoutStream, err = cmd.StdoutPipe()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		e.stderrStream, err = cmd.StderrPipe()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		e.stdinStream, err = cmd.StdinPipe()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Close slave ends of pipes if cmd runs successfully
+	onCmdStartSuccessCleanup = func() {
+		if e.ShouldusePTY {
+			ptyResources.closeSlaves()
+		}
+	}
+
+	// Close all pipes if cmd fails to start
+	onCmdStartFailureCleanup = func() {
+		if e.ShouldusePTY {
+			ptyResources.closeAll()
+		} else {
+			e.stdoutStream.Close()
+			e.stderrStream.Close()
+			e.stdinStream.Close()
+		}
+	}
+
+	return onCmdStartSuccessCleanup, onCmdStartFailureCleanup, nil
 }
