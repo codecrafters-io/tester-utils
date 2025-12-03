@@ -95,19 +95,23 @@ func (h *pipeStdioHandler) CleanupStreamsOnStartFailure() (err error) {
 		h.stdinPipe = nil
 	}()
 
-	if err = h.stdoutPipe.Close(); err != nil {
-		return err
+	// Close all streams regardless of errors to prevent fd leaks
+	// Return the first error encountered, if any
+	var firstError error
+
+	if stdoutCloseError := h.stdoutPipe.Close(); stdoutCloseError != nil {
+		firstError = stdoutCloseError
 	}
 
-	if err = h.stderrPipe.Close(); err != nil {
-		return err
+	if stderrCloseError := h.stderrPipe.Close(); stderrCloseError != nil && firstError == nil {
+		firstError = stderrCloseError
 	}
 
-	if err = h.stdinPipe.Close(); err != nil {
-		return err
+	if stdinCloseError := h.stdinPipe.Close(); stdinCloseError != nil && firstError == nil {
+		firstError = stdinCloseError
 	}
 
-	return nil
+	return firstError
 }
 
 func (h *pipeStdioHandler) CleanupStreamsAfterWait() error {
@@ -167,27 +171,33 @@ func (h *ptyStdioHandler) CloseDuplicatedStreamsOfChild() error {
 }
 
 func (h *ptyStdioHandler) CleanupStreamsOnStartFailure() error {
+	defer func() {
+		h.resetAll()
+	}()
+
 	if err := h.closeMasters(); err != nil {
 		return err
 	}
 
-	h.resetAll()
 	return nil
 }
 
 func (h *ptyStdioHandler) CleanupStreamsAfterWait() error {
+	defer func() {
+		h.resetAll()
+	}()
+
 	if err := h.closeMasters(); err != nil {
 		return err
 	}
-
-	h.resetAll()
 
 	return nil
 }
 
 func (h *ptyStdioHandler) WriteToStdin(input []byte) (int, error) {
-	// Terminal based input are only flushed after sending additional \n character
-	inputWithNewline := append(input, byte('\n'))
+	duplicatedInput := make([]byte, len(input)+1)
+	copy(duplicatedInput, input)
+	inputWithNewline := append(duplicatedInput, byte('\n'))
 	return h.stdinMaster.Write(inputWithNewline)
 }
 
