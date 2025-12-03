@@ -15,8 +15,8 @@ import (
 
 // cgroupManager handles cgroup-based resource limiting on Linux
 type cgroupManager struct {
-	manager       *cgroup2.Manager
-	cgroupPath    string
+	manager        *cgroup2.Manager
+	cgroupPath     string
 	initialOOMKill uint64
 }
 
@@ -52,8 +52,8 @@ func newCgroupManager(memoryLimitBytes int64, pid int) (*cgroupManager, error) {
 	initialOOMKill := readOOMKillCount(cgroupPath)
 
 	return &cgroupManager{
-		manager:       manager,
-		cgroupPath:    cgroupPath,
+		manager:        manager,
+		cgroupPath:     cgroupPath,
 		initialOOMKill: initialOOMKill,
 	}, nil
 }
@@ -96,4 +96,3 @@ func readOOMKillCount(cgroupPath string) uint64 {
 
 	return 0
 }
-

@@ -2,6 +2,7 @@ package executable
 
 import (
 	"errors"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -222,6 +223,10 @@ func TestSegfault(t *testing.T) {
 func TestMemoryLimit(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Memory limiting is only supported on Linux")
+	}
+
+	if os.Getenv("CI") != "" {
+		t.Skip("Memory limiting is not supported in GitHub Actions")
 	}
 
 	e := NewExecutable("./test_helpers/memory_hog.py")
