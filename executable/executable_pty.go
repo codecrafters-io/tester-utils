@@ -9,7 +9,7 @@ import (
 // StartInPty starts the specified command with PTY support but does not wait for it to complete.
 func (e *Executable) StartInPty(args ...string) error {
 	// Use three different PTY pairs
-	// This removes input reflection checks, and seggregates stdout and stderr messages of a process
+	// This removes input reflection checks, and segregates stdout and stderr messages of a process
 	stdinMaster, stdinSlave, err := pty.Open()
 	if err != nil {
 		return err
@@ -30,19 +30,19 @@ func (e *Executable) StartInPty(args ...string) error {
 		cmd.Stdout = stdoutSlave
 		cmd.Stderr = stderrSlave
 
-		e.stdinPipe = stdinMaster
-		e.stdoutPipe = stdoutMaster
-		e.stderrPipe = stderrMaster
+		e.stdinStream = stdinMaster
+		e.stdoutStream = stdoutMaster
+		e.stderrStream = stderrMaster
 		return nil
 	}
 
-	postStartHook := func() {
+	slaveCloserCallback := func() {
 		stdinSlave.Close()
 		stdoutSlave.Close()
 		stderrSlave.Close()
 	}
 
-	return e.startWithHooks(stdioInitializer, postStartHook, args...)
+	return e.startWithCallbacks(stdioInitializer, slaveCloserCallback, args...)
 }
 
 // RunWithStdinInPty starts the specified command in a PTY, sends input, waits for it to complete and returns the result.
@@ -53,7 +53,7 @@ func (e *Executable) RunWithStdinInPty(stdin []byte, args ...string) (Executable
 		return ExecutableResult{}, err
 	}
 
-	e.stdinPipe.Write(stdin)
+	e.stdinStream.Write(stdin)
 
 	return e.Wait()
 }

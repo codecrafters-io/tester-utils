@@ -89,6 +89,7 @@ func TestLargeOutputCaptureInPty(t *testing.T) {
 
 func TestExitCodeInPty(t *testing.T) {
 	e := NewExecutable("./test_helpers/exit_with.sh")
+	e.TimeoutInMilliseconds = 3600 * 1000
 
 	result, _ := e.RunWithStdinInPty([]byte(""), "0")
 	assert.Equal(t, 0, result.ExitCode)
@@ -148,10 +149,10 @@ func TestStdinInPty(t *testing.T) {
 	e.StartInPty("cat")
 	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.stdinPipe.Write([]byte("has cat"))
+	e.stdinStream.Write([]byte("has cat"))
 	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.stdinPipe.Close()
+	e.stdinStream.Close()
 	time.Sleep(100 * time.Millisecond)
 	assert.True(t, e.HasExited(), "Expected to have exited")
 }

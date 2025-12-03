@@ -31,13 +31,13 @@ type Executable struct {
 
 	Process *os.Process
 
-	stdinPipe io.WriteCloser
+	stdinStream io.WriteCloser
 
 	// These are set & removed together
 	atleastOneReadDone bool
 	cmd                *exec.Cmd
-	stdoutPipe         io.ReadCloser
-	stderrPipe         io.ReadCloser
+	stdoutStream       io.ReadCloser
+	stderrStream       io.ReadCloser
 	stdoutBytes        []byte
 	stderrBytes        []byte
 	stdoutBuffer       *bytes.Buffer
@@ -99,70 +99,20 @@ func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
 }
 
-// Start starts the specified command but does not wait for it to complete.
-func (e *Executable) Start(args ...string) error {
-	stdStreamsInitializer := func(cmd *exec.Cmd) error {
-		var err error
-
-		e.stdoutPipe, err = cmd.StdoutPipe()
-		if err != nil {
-			return err
-		}
-
-		e.stderrPipe, err = cmd.StderrPipe()
-		if err != nil {
-			return err
-		}
-
-		e.stdinPipe, err = cmd.StdinPipe()
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}
-
-	return e.startWithHooks(stdStreamsInitializer, nil, args...)
-}
-
-// Run starts the specified command, waits for it to complete and returns the result.
-func (e *Executable) Run(args ...string) (ExecutableResult, error) {
-	var err error
-
-	if err = e.Start(args...); err != nil {
-		return ExecutableResult{}, err
-	}
-
-	return e.Wait()
-}
-
-// RunWithStdin starts the specified command, sends input, waits for it to complete and returns the result.
-func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResult, error) {
-	var err error
-
-	if err = e.Start(args...); err != nil {
-		return ExecutableResult{}, err
-	}
-
-	e.stdinPipe.Write(stdin)
-
-	return e.Wait()
-}
-
 // Wait waits for the program to finish and results the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
-	file, ok := e.stdinPipe.(*os.File)
+	file, ok := e.stdinStream.(*os.File)
 	if !ok {
-		panic("stdinPipe is not *os.File")
+		panic("stdinStream is not *os.File")
 	}
 
 	if !isatty.IsTerminal(file.Fd()) {
-		return e.waitWithEofSignaler(func() { e.stdinPipe.Close() })
+		return e.waitWithEofSignaler(func() { e.stdinStream.Close() })
 	}
 
 	// Write VEOF (equivalent of Ctrl-D to terminal)
 	return e.waitWithEofSignaler(func() {
-		e.stdinPipe.Write([]byte{4, 4})
+		e.stdinStream.Write([]byte{4})
 	})
 }
 
@@ -205,7 +155,12 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 		// Limit to 30KB (~250 lines at 120 chars per line)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 		if err != nil {
-			panic(err)
+			// In linux, if the source is a terminal device, io.Copy results in EIO when the process has exitted and closed its slave end
+			// (Source: The Linux Programming Interface Appendix F - 64.1)
+			// This can be safely ignored
+			if !(isReaderATty(source) && errors.Is(err, syscall.EIO)) {
+				panic(err)
+			}
 		}
 
 		if bytesWritten == 30000 {
@@ -214,14 +169,14 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 
 		e.atleastOneReadDone = true
 		e.readDone <- true
-		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
+		io.Copy(io.Discard, source) // Let's drain the stream in case any content is leftover
 	}()
 }
 
-// startWithHooks starts the specified command with stdStreamsInitializerHook, and onCmdStartSuccessHook
-// stdStreamsInitializerHook is responsible for setting up executable's stdin, stdout, and stderr
-// onCmdStartSuccessHook is run after cmd.Start() has succeeded
-func (e *Executable) startWithHooks(stdStreamsInitializerHook func(cmd *exec.Cmd) error, onCmdStartSuccessHook func(), args ...string) error {
+// startWithCallbacks starts the specified command with stdStreamsInitializerCallback, and onCmdStartSuccessCallback
+// stdStreamsInitializerCallback is responsible for setting up executable's stdin, stdout, and stderr
+// onCmdStartSuccessCallback is run after cmd.Start() has succeeded
+func (e *Executable) startWithCallbacks(stdStreamsInitializerCallback func(cmd *exec.Cmd) error, onCmdStartSuccessCallback func(), args ...string) error {
 	if e.isRunning() {
 		return errors.New("process already in progress")
 	}
@@ -268,7 +223,7 @@ func (e *Executable) startWithHooks(stdStreamsInitializerHook func(cmd *exec.Cmd
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup standard streams using the provided function
-	err = stdStreamsInitializerHook(cmd)
+	err = stdStreamsInitializerCallback(cmd)
 	if err != nil {
 		return err
 	}
@@ -278,8 +233,9 @@ func (e *Executable) startWithHooks(stdStreamsInitializerHook func(cmd *exec.Cmd
 		return err
 	}
 
-	if onCmdStartSuccessHook != nil {
-		onCmdStartSuccessHook()
+	// Run the callback after cmd.Start() succeeds
+	if onCmdStartSuccessCallback != nil {
+		onCmdStartSuccessCallback()
 	}
 
 	e.Process, err = os.FindProcess(cmd.Process.Pid)
@@ -289,8 +245,8 @@ func (e *Executable) startWithHooks(stdStreamsInitializerHook func(cmd *exec.Cmd
 
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
 	e.cmd = cmd
-	e.setupIORelay(e.stdoutPipe, e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stderrPipe, e.stderrBuffer, e.stderrLineWriter)
+	e.setupIORelay(e.stdoutStream, e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.stderrStream, e.stderrBuffer, e.stderrLineWriter)
 
 	return nil
 }
@@ -304,8 +260,8 @@ func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, 
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
-		e.stdoutPipe = nil
-		e.stderrPipe = nil
+		e.stdoutStream = nil
+		e.stderrStream = nil
 		e.stdoutBuffer = nil
 		e.stderrBuffer = nil
 		e.stdoutBytes = nil
@@ -313,7 +269,7 @@ func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, 
 		e.stdoutLineWriter = nil
 		e.stderrLineWriter = nil
 		e.readDone = nil
-		e.stdinPipe = nil
+		e.stdinStream = nil
 	}()
 
 	eofSignaler()
@@ -357,4 +313,13 @@ func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, 
 		return ExecutableResult{}, fmt.Errorf("execution timed out")
 	}
 	return result, nil
+}
+
+func isReaderATty(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+
+	return isatty.IsTerminal(file.Fd())
 }
