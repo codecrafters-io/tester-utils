@@ -169,12 +169,12 @@ func TestStdinInPty(t *testing.T) {
 func TestRunWithStdinInPty(t *testing.T) {
 	e := getNewExecutableForPTYTests("grep")
 
-	result, err := e.RunWithStdin([]byte("has cat\n"), "cat")
+	result, err := e.RunWithStdin([]byte("has cat"), "cat")
 	assert.NoError(t, err)
 
 	assert.Equal(t, result.ExitCode, 0)
 
-	result, err = e.RunWithStdin([]byte("only dog\n"), "cat")
+	result, err = e.RunWithStdin([]byte("only dog"), "cat")
 	assert.NoError(t, err)
 
 	assert.Equal(t, result.ExitCode, 1)

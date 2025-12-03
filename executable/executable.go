@@ -258,7 +258,12 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 		return ExecutableResult{}, err
 	}
 
-	e.stdinStream.Write(stdin)
+	if e.ShouldusePTY {
+		// Since a terminal device is line buffered, an additional \n is needed for flushing the stdin
+		e.stdinStream.Write(fmt.Appendf(stdin, "\n"))
+	} else {
+		e.stdinStream.Write(stdin)
+	}
 
 	return e.Wait()
 }
