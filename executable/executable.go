@@ -152,7 +152,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup standard streams
-	onStartSuccessCleanup, onStartFailureCleanup, err := e.setupStandardStreams(cmd)
+	onCmdStartSuccessCleanup, onCmdStartFailureCleanup, err := e.setupStandardStreams(cmd)
 
 	if err != nil {
 		return err
@@ -161,11 +161,11 @@ func (e *Executable) Start(args ...string) error {
 	err = cmd.Start()
 
 	if err != nil {
-		onStartFailureCleanup()
+		onCmdStartFailureCleanup()
 		return err
 	}
 
-	onStartSuccessCleanup()
+	onCmdStartSuccessCleanup()
 
 	e.Process, err = os.FindProcess(cmd.Process.Pid)
 	if err != nil {
@@ -348,7 +348,7 @@ func (e *Executable) Kill() error {
 // onSuccessCleanup should be run if the executable successfully starts
 // onFailure should be run if the executable fails to start properly
 // err is returned if an error is encountered while setting up the streams
-func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onStartSuccessCleanup func(), onStartFailureCleanup func(), err error) {
+func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessCleanup func(), onCmdStartFailureCleanup func(), err error) {
 	var ptyResources ptyResources
 
 	if e.ShouldusePTY {
@@ -390,19 +390,19 @@ func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onStartSuccessCleanup 
 	}
 
 	// Close slave ends of pipes if Start() succeeds
-	onStartSuccessCleanup = func() {
+	onCmdStartSuccessCleanup = func() {
 		if e.ShouldusePTY {
 			ptyResources.closeSlaves()
 		}
 	}
 
 	// Close all master and slaves if Start() fails
-	onStartFailureCleanup = func() {
+	onCmdStartFailureCleanup = func() {
 		if e.ShouldusePTY {
 			ptyResources.closeAll()
 		} else {
 		}
 	}
 
-	return onStartSuccessCleanup, onStartFailureCleanup, nil
+	return onCmdStartSuccessCleanup, onCmdStartFailureCleanup, nil
 }
