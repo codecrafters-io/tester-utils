@@ -30,6 +30,11 @@ type Executable struct {
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
 
+	// MemoryLimitInBytes sets the maximum memory the process can use (Linux only).
+	// If exceeded, the process will be killed and an error will be returned.
+	// Defaults to 1GB. Set to 0 to disable memory limiting.
+	MemoryLimitInBytes int64
+
 	Process *os.Process
 
 	// These are set & removed together
@@ -43,6 +48,7 @@ type Executable struct {
 	stderrLineWriter   *linewriter.LineWriter
 	readDone           chan bool
 	stdioHandler       stdioHandler
+	cgroupManager      *cgroupManager // Platform-specific cgroup manager
 }
 
 // ExecutableResult holds the result of an executable run
@@ -77,8 +83,12 @@ func (e *Executable) Clone() *Executable {
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
 		ShouldUsePty:          e.ShouldUsePty,
+		MemoryLimitInBytes:    e.MemoryLimitInBytes,
 	}
 }
+
+// DefaultMemoryLimitInBytes is the default memory limit (1GB)
+const DefaultMemoryLimitInBytes int64 = 1 * 1024 * 1024 * 1024
 
 // NewExecutable returns an Executable
 func NewExecutable(path string) *Executable {
@@ -86,6 +96,7 @@ func NewExecutable(path string) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            nullLogger,
+		MemoryLimitInBytes:    DefaultMemoryLimitInBytes,
 	}
 }
 
@@ -95,6 +106,7 @@ func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
+		MemoryLimitInBytes:    DefaultMemoryLimitInBytes,
 	}
 }
 
@@ -193,6 +205,15 @@ func (e *Executable) Start(args ...string) error {
 
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
 	e.cmd = cmd
+
+	// Setup cgroup for memory limiting (Linux only, no-op on other platforms)
+	e.cgroupManager, err = newCgroupManager(e.MemoryLimitInBytes, cmd.Process.Pid)
+	if err != nil {
+		// Log warning but don't fail - cgroup setup may require elevated privileges
+		e.loggerFunc(fmt.Sprintf("Warning: failed to setup memory limit: %v", err))
+		e.cgroupManager = nil
+	}
+
 	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
 	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
 
@@ -249,9 +270,18 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 	return e.Wait()
 }
 
+// ErrMemoryLimitExceeded is returned when a process exceeds its memory limit
+var ErrMemoryLimitExceeded = errors.New("process exceeded memory limit")
+
 // Wait waits for the program to finish and returns the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
+		// Cleanup cgroup
+		if e.cgroupManager != nil {
+			e.cgroupManager.cleanup()
+			e.cgroupManager = nil
+		}
+
 		e.ctxCancelFunc()
 		// Close parent's remaining file descriptors
 		e.stdioHandler.CloseParentStreams()
@@ -309,6 +339,12 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	if e.ctxWithTimeout.Err() == context.DeadlineExceeded {
 		return ExecutableResult{}, fmt.Errorf("execution timed out")
 	}
+
+	// Check if process was killed due to OOM (exit code 137 = 128 + SIGKILL)
+	if exitCode == 137 && e.cgroupManager != nil && e.cgroupManager.wasOOMKilled() {
+		return result, ErrMemoryLimitExceeded
+	}
+
 	return result, nil
 }
 
