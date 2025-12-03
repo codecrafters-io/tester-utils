@@ -159,6 +159,13 @@ func (e *Executable) Start(args ...string) error {
 			return err
 		}
 
+		// Cleanup FDs if Start does not succeed
+		defer func() {
+			if err != nil {
+				ptyResources.closeAll()
+			}
+		}()
+
 		// Assign master and slave ends to parent and child respectively
 		cmd.Stdout = ptyResources.stdoutSlave
 		cmd.Stderr = ptyResources.stderrSlave
