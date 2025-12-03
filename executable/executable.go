@@ -70,12 +70,23 @@ func nullLogger(msg string) {
 }
 
 func (e *Executable) Clone() *Executable {
+	var clonedStdioHandler stdioHandler
+
+	switch e.stdioHandler.(type) {
+	case *pipeStdioHandler:
+		clonedStdioHandler = &pipeStdioHandler{}
+	case *ptyStdioHandler:
+		clonedStdioHandler = &ptyStdioHandler{}
+	default:
+		panic("Codecrafters Internal Error - stdioHandler type is unknown")
+	}
+
 	return &Executable{
 		Path:                  e.Path,
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
-		stdioHandler:          e.stdioHandler,
+		stdioHandler:          clonedStdioHandler,
 	}
 }
 
