@@ -80,6 +80,7 @@ func (e *Executable) Clone() *Executable {
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
+		ShouldusePTY:          e.ShouldusePTY,
 	}
 }
 
@@ -103,6 +104,8 @@ func (e *Executable) HasExited() bool {
 
 // Start starts the specified command but does not wait for it to complete.
 func (e *Executable) Start(args ...string) error {
+	var err error
+
 	if e.isRunning() {
 		return errors.New("process already in progress")
 	}
@@ -111,7 +114,7 @@ func (e *Executable) Start(args ...string) error {
 
 	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
 	// In those cases we use the path returned by LookPath.
-	resolvedPath, err := exec.LookPath(e.Path)
+	resolvedPath, err = exec.LookPath(e.Path)
 	if err == nil {
 		absolutePath = resolvedPath
 	} else {
@@ -148,6 +151,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
+	// Setup standard streams
 	var ptyResources ptyResources
 
 	if e.ShouldusePTY {
@@ -257,10 +261,12 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
 
-		// Close the parent end of the respective streams
-		// Though in case of pipe, stdin is already closed by eof signaler
-		// This is not a problem since it is utilized by PTY executable
-		e.stdinStream.Close()
+		// Close stdin stream if PTY was used
+		// This is because the start of Wait() issues a VEOF character instead of closing the stdin stream
+		if e.ShouldusePTY {
+			e.stdinStream.Close()
+		}
+
 		e.stdoutStream.Close()
 		e.stderrStream.Close()
 
