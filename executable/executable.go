@@ -72,7 +72,7 @@ func nullLogger(msg string) {
 func (e *Executable) Clone() *Executable {
 	var clonedStdioHandler stdioHandler
 
-	// We instantiate the stdioHandler based on the type used in the source executable
+	// Instantiate the stdioHandler based on the type used in the source executable
 	switch e.stdioHandler.(type) {
 	case *pipeStdioHandler:
 		clonedStdioHandler = &pipeStdioHandler{}
