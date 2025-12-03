@@ -271,6 +271,8 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
+		e.stdoutBuffer = nil
+		e.stderrBuffer = nil
 		e.stdoutBytes = nil
 		e.stderrBytes = nil
 		e.stdoutLineWriter = nil
@@ -353,66 +355,3 @@ func (e *Executable) Kill() error {
 
 	return err
 }
-
-// setupStandardStreams connects process' stdin, stdout, and stderr with pipe/pty depending on whether or not e.ShouldTTY is set
-// onSuccessCleanup should be run if the executable successfully starts
-// onFailure should be run if the executable fails to start properly
-// err is returned if an error is encountered while setting up the streams
-// func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessCleanup func(), onCmdStartFailureCleanup func(), err error) {
-// 	var ptyResources ptyResources
-
-// 	if e.ShouldUsePTY {
-// 		if err = ptyResources.openAll(); err != nil {
-// 			return nil, nil, err
-// 		}
-
-// 		// Cleanup FDs if Start does not succeed
-// 		defer func() {
-// 			if err != nil {
-// 				ptyResources.closeAll()
-// 			}
-// 		}()
-
-// 		// Assign master and slave ends to parent and child respectively
-// 		cmd.Stdout = ptyResources.stdoutSlave
-// 		cmd.Stderr = ptyResources.stderrSlave
-// 		cmd.Stdin = ptyResources.stdinSlave
-// 		e.stdoutStream = ptyResources.stdoutMaster
-// 		e.stderrStream = ptyResources.stderrMaster
-// 		e.stdinStream = ptyResources.stdinMaster
-
-// 	} else {
-// 		// Setup standard streams using the provided function
-// 		e.stdoutStream, err = cmd.StdoutPipe()
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-
-// 		e.stderrStream, err = cmd.StderrPipe()
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-
-// 		e.stdinStream, err = cmd.StdinPipe()
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-// 	}
-
-// 	// Close slave ends of pipes if Start() succeeds
-// 	onCmdStartSuccessCleanup = func() {
-// 		if e.ShouldUsePTY {
-// 			ptyResources.closeSlaves()
-// 		}
-// 	}
-
-// 	// Close all master and slaves if Start() fails
-// 	onCmdStartFailureCleanup = func() {
-// 		if e.ShouldUsePTY {
-// 			ptyResources.closeAll()
-// 		} else {
-// 		}
-// 	}
-
-// 	return onCmdStartSuccessCleanup, onCmdStartFailureCleanup, nil
-// }
