@@ -16,22 +16,34 @@ func (e *Executable) StartInPty(args ...string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			stdinMaster.Close()
+			stdinSlave.Close()
+		}
+	}()
 
 	stdoutMaster, stdoutSlave, err := pty.Open()
 	if err != nil {
-		stdinMaster.Close()
-		stdinSlave.Close()
 		return err
 	}
+	defer func() {
+		if err != nil {
+			stdoutMaster.Close()
+			stdoutSlave.Close()
+		}
+	}()
 
 	stderrMaster, stderrSlave, err := pty.Open()
 	if err != nil {
-		stdinMaster.Close()
-		stdinSlave.Close()
-		stdoutMaster.Close()
-		stdoutSlave.Close()
 		return err
 	}
+	defer func() {
+		if err != nil {
+			stderrMaster.Close()
+			stderrSlave.Close()
+		}
+	}()
 
 	stdioInitializer := func(cmd *exec.Cmd) error {
 		cmd.Stdin = stdinSlave
@@ -73,9 +85,7 @@ func (e *Executable) RunWithStdinInPty(stdin []byte, args ...string) (Executable
 		return ExecutableResult{}, err
 	}
 
-	if _, err = e.stdinStream.Write(stdin); err != nil {
-		return ExecutableResult{}, err
-	}
+	e.stdinStream.Write(stdin)
 
 	return e.Wait()
 }
