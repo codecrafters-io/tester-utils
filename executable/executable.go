@@ -30,13 +30,9 @@ type Executable struct {
 
 	Process *os.Process
 
-	stdinStream io.WriteCloser
-
 	// These are set & removed together
 	atleastOneReadDone bool
 	cmd                *exec.Cmd
-	stdoutStream       io.ReadCloser
-	stderrStream       io.ReadCloser
 	stdoutBytes        []byte
 	stderrBytes        []byte
 	stdoutBuffer       *bytes.Buffer
@@ -45,8 +41,7 @@ type Executable struct {
 	stderrLineWriter   *linewriter.LineWriter
 	readDone           chan bool
 
-	// If true, PTY devices are used instead of pipes for standard streams
-	ShouldusePTY bool
+	stdioHandler stdioHandler
 }
 
 // ExecutableResult holds the result of an executable run
@@ -80,18 +75,43 @@ func (e *Executable) Clone() *Executable {
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
-		ShouldusePTY:          e.ShouldusePTY,
+		stdioHandler:          e.stdioHandler,
 	}
 }
 
 // NewExecutable returns an Executable
 func NewExecutable(path string) *Executable {
-	return &Executable{Path: path, TimeoutInMilliseconds: 10 * 1000, loggerFunc: nullLogger}
+	return &Executable{
+		Path:                  path,
+		TimeoutInMilliseconds: 10 * 1000,
+		loggerFunc:            nullLogger,
+		stdioHandler:          &pipeStdioHandler{}, // default stdio handler
+	}
 }
 
 // NewVerboseExecutable returns an Executable struct with a logger configured
-func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
-	return &Executable{Path: path, TimeoutInMilliseconds: 10 * 1000, loggerFunc: loggerFunc}
+func NewVerboseExecutable(path string, loggerFunc func(string), usePTY bool) *Executable {
+	var stdioHandler stdioHandler
+	if usePTY {
+		stdioHandler = &ptyStdioHandler{}
+	} else {
+		stdioHandler = &pipeStdioHandler{}
+	}
+	return &Executable{
+		Path:                  path,
+		TimeoutInMilliseconds: 10 * 1000,
+		loggerFunc:            loggerFunc,
+		stdioHandler:          stdioHandler,
+	}
+}
+
+// SetUsePty switches stdiohandler for executable between pip/pty based on usePty flag
+func (e *Executable) SetUsePty(usePty bool) {
+	if usePty {
+		e.stdioHandler = &ptyStdioHandler{}
+	} else {
+		e.stdioHandler = &pipeStdioHandler{}
+	}
 }
 
 func (e *Executable) isRunning() bool {
@@ -152,20 +172,21 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup standard streams
-	onCmdStartSuccessCleanup, onCmdStartFailureCleanup, err := e.setupStandardStreams(cmd)
-
-	if err != nil {
+	if err := e.stdioHandler.SetupStreams(cmd); err != nil {
 		return err
 	}
 
 	err = cmd.Start()
 
+	// This can be placed in e.Wait()
+	// However, cmd.Start() closes duplicated streams as soon as the process starts
+	// So, we repeat the pattern
+	e.stdioHandler.CloseDuplicatedStreamsOfChild()
+
 	if err != nil {
-		onCmdStartFailureCleanup()
+		e.stdioHandler.CleanupStreamsOnFailedStart()
 		return err
 	}
-
-	onCmdStartSuccessCleanup()
 
 	e.Process, err = os.FindProcess(cmd.Process.Pid)
 	if err != nil {
@@ -174,8 +195,8 @@ func (e *Executable) Start(args ...string) error {
 
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
 	e.cmd = cmd
-	e.setupIORelay(e.stdoutStream, e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stderrStream, e.stderrBuffer, e.stderrLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
 
 	return nil
 }
@@ -223,12 +244,7 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 		return ExecutableResult{}, err
 	}
 
-	if e.ShouldusePTY {
-		// Since a terminal device is line buffered, an additional \n is needed for flushing the stdin
-		e.stdinStream.Write(fmt.Appendf(stdin, "\n"))
-	} else {
-		e.stdinStream.Write(stdin)
-	}
+	e.stdioHandler.WriteToStdin(stdin)
 
 	return e.Wait()
 }
@@ -237,38 +253,20 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
-
-		// Close stdin stream if PTY was used
-		// This is because the start of Wait() issues a VEOF character instead of closing the stdin stream
-		if e.ShouldusePTY {
-			e.stdinStream.Close()
-		}
-
-		e.stdoutStream.Close()
-		e.stderrStream.Close()
-
+		// We finally close the FDs used by the parent
+		e.stdioHandler.CloseParentsEndOfChildStreams()
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
-		e.stdoutStream = nil
-		e.stderrStream = nil
-		e.stdoutBuffer = nil
-		e.stderrBuffer = nil
 		e.stdoutBytes = nil
 		e.stderrBytes = nil
 		e.stdoutLineWriter = nil
 		e.stderrLineWriter = nil
 		e.readDone = nil
-		e.stdinStream = nil
 	}()
 
-	if e.ShouldusePTY {
-		// Close stdin by sending VEOF instead of closing the pipe when PTY is used
-		e.stdinStream.Write([]byte{4})
-	} else {
-		e.stdinStream.Close()
-	}
+	e.stdioHandler.SendEofToStdin()
 
 	<-e.readDone
 	<-e.readDone
@@ -348,61 +346,61 @@ func (e *Executable) Kill() error {
 // onSuccessCleanup should be run if the executable successfully starts
 // onFailure should be run if the executable fails to start properly
 // err is returned if an error is encountered while setting up the streams
-func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessCleanup func(), onCmdStartFailureCleanup func(), err error) {
-	var ptyResources ptyResources
+// func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessCleanup func(), onCmdStartFailureCleanup func(), err error) {
+// 	var ptyResources ptyResources
 
-	if e.ShouldusePTY {
-		if err = ptyResources.openAll(); err != nil {
-			return nil, nil, err
-		}
+// 	if e.ShouldUsePTY {
+// 		if err = ptyResources.openAll(); err != nil {
+// 			return nil, nil, err
+// 		}
 
-		// Cleanup FDs if Start does not succeed
-		defer func() {
-			if err != nil {
-				ptyResources.closeAll()
-			}
-		}()
+// 		// Cleanup FDs if Start does not succeed
+// 		defer func() {
+// 			if err != nil {
+// 				ptyResources.closeAll()
+// 			}
+// 		}()
 
-		// Assign master and slave ends to parent and child respectively
-		cmd.Stdout = ptyResources.stdoutSlave
-		cmd.Stderr = ptyResources.stderrSlave
-		cmd.Stdin = ptyResources.stdinSlave
-		e.stdoutStream = ptyResources.stdoutMaster
-		e.stderrStream = ptyResources.stderrMaster
-		e.stdinStream = ptyResources.stdinMaster
+// 		// Assign master and slave ends to parent and child respectively
+// 		cmd.Stdout = ptyResources.stdoutSlave
+// 		cmd.Stderr = ptyResources.stderrSlave
+// 		cmd.Stdin = ptyResources.stdinSlave
+// 		e.stdoutStream = ptyResources.stdoutMaster
+// 		e.stderrStream = ptyResources.stderrMaster
+// 		e.stdinStream = ptyResources.stdinMaster
 
-	} else {
-		// Setup standard streams using the provided function
-		e.stdoutStream, err = cmd.StdoutPipe()
-		if err != nil {
-			return nil, nil, err
-		}
+// 	} else {
+// 		// Setup standard streams using the provided function
+// 		e.stdoutStream, err = cmd.StdoutPipe()
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
 
-		e.stderrStream, err = cmd.StderrPipe()
-		if err != nil {
-			return nil, nil, err
-		}
+// 		e.stderrStream, err = cmd.StderrPipe()
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
 
-		e.stdinStream, err = cmd.StdinPipe()
-		if err != nil {
-			return nil, nil, err
-		}
-	}
+// 		e.stdinStream, err = cmd.StdinPipe()
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 	}
 
-	// Close slave ends of pipes if Start() succeeds
-	onCmdStartSuccessCleanup = func() {
-		if e.ShouldusePTY {
-			ptyResources.closeSlaves()
-		}
-	}
+// 	// Close slave ends of pipes if Start() succeeds
+// 	onCmdStartSuccessCleanup = func() {
+// 		if e.ShouldUsePTY {
+// 			ptyResources.closeSlaves()
+// 		}
+// 	}
 
-	// Close all master and slaves if Start() fails
-	onCmdStartFailureCleanup = func() {
-		if e.ShouldusePTY {
-			ptyResources.closeAll()
-		} else {
-		}
-	}
+// 	// Close all master and slaves if Start() fails
+// 	onCmdStartFailureCleanup = func() {
+// 		if e.ShouldUsePTY {
+// 			ptyResources.closeAll()
+// 		} else {
+// 		}
+// 	}
 
-	return onCmdStartSuccessCleanup, onCmdStartFailureCleanup, nil
-}
+// 	return onCmdStartSuccessCleanup, onCmdStartFailureCleanup, nil
+// }
