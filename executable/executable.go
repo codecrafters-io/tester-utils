@@ -119,6 +119,9 @@ func NewVerboseExecutable(path string, loggerFunc func(string), usePTY bool) *Ex
 
 // SetUsePty switches stdiohandler for executable between pip/pty based on usePty flag
 func (e *Executable) SetUsePty(usePty bool) {
+	if e.isRunning() {
+		panic("Codecrafters Internal Error - SetUsePty called while executable is running")
+	}
 	if usePty {
 		e.stdioHandler = &ptyStdioHandler{}
 	} else {
