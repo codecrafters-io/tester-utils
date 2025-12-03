@@ -6,7 +6,7 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-func isATty(r any) bool {
+func isTTY(r any) bool {
 	file, ok := r.(*os.File)
 	if !ok {
 		return false
