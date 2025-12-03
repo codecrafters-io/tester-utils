@@ -152,7 +152,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Setup standard streams
-	onCmdStartSuccessCleanup, onCmdStartFailureCleanup, err := e.setupStandardStreams(cmd)
+	onStartSuccessCleanup, onStartFailureCleanup, err := e.setupStandardStreams(cmd)
 
 	if err != nil {
 		return err
@@ -160,10 +160,10 @@ func (e *Executable) Start(args ...string) error {
 
 	defer func() {
 		if err != nil {
-			onCmdStartFailureCleanup()
+			onStartFailureCleanup()
 			return
 		}
-		onCmdStartSuccessCleanup()
+		onStartSuccessCleanup()
 	}()
 
 	err = cmd.Start()
@@ -352,7 +352,7 @@ func (e *Executable) Kill() error {
 // onSuccessCleanup should be run if the executable successfully starts
 // onFailure should be run if the executable fails to start properly
 // err is returned if an error is encountered while setting up the streams
-func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessCleanup func(), onCmdStartFailureCleanup func(), err error) {
+func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onStartSuccessCleanup func(), onStartFailureCleanup func(), err error) {
 	var ptyResources ptyResources
 
 	if e.ShouldusePTY {
@@ -393,15 +393,15 @@ func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessClean
 		}
 	}
 
-	// Close slave ends of pipes if cmd runs successfully
-	onCmdStartSuccessCleanup = func() {
+	// Close slave ends of pipes if Start() succeeds
+	onStartSuccessCleanup = func() {
 		if e.ShouldusePTY {
 			ptyResources.closeSlaves()
 		}
 	}
 
-	// Close all pipes if cmd fails to start
-	onCmdStartFailureCleanup = func() {
+	// Close all pipes if Start() fails
+	onStartFailureCleanup = func() {
 		if e.ShouldusePTY {
 			ptyResources.closeAll()
 		} else {
@@ -411,5 +411,5 @@ func (e *Executable) setupStandardStreams(cmd *exec.Cmd) (onCmdStartSuccessClean
 		}
 	}
 
-	return onCmdStartSuccessCleanup, onCmdStartFailureCleanup, nil
+	return onStartSuccessCleanup, onStartFailureCleanup, nil
 }
