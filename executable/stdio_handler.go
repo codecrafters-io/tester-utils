@@ -9,6 +9,11 @@ import (
 	"github.com/creack/pty"
 )
 
+// (TO_DELETE) This comment will removed after PR review
+// Went with uppercase(public) for interface methods, and used lowercase(private) for implementing
+// struct's method just for visual differentiation
+// Since this interface is private, it should not affect its usage
+
 type stdioHandler interface {
 
 	// getStdin(), getStdout(), and getStderr() are only used privately
