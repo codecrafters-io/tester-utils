@@ -253,34 +253,40 @@ func (r *ptyStdioHandler) closeAll() error {
 
 // closeSlaves closes only the slave ends of the PTY pairs.
 func (r *ptyStdioHandler) closeSlaves() error {
-	if err := closeIfNotNil(r.stdinSlave); err != nil {
-		return err
+	var firstError error
+
+	// best effort
+	if stdinSlaveError := closeIfNotNil(r.stdinSlave); stdinSlaveError != nil {
+		firstError = stdinSlaveError
 	}
 
-	if err := closeIfNotNil(r.stdoutSlave); err != nil {
-		return err
+	if stdoutSlaveError := closeIfNotNil(r.stdoutSlave); stdoutSlaveError != nil && firstError == nil {
+		firstError = stdoutSlaveError
 	}
 
-	if err := closeIfNotNil(r.stderrSlave); err != nil {
-		return err
+	if stderrSlaveError := closeIfNotNil(r.stderrSlave); stderrSlaveError != nil && firstError == nil {
+		firstError = stderrSlaveError
 	}
 
-	return nil
+	return firstError
 }
 
 // closeMasters closes only the master ends of the PTY pairs.
 func (r *ptyStdioHandler) closeMasters() error {
-	if err := closeIfNotNil(r.stdinMaster); err != nil {
-		return err
+	var firstError error
+
+	// best effort
+	if stdinMasterError := closeIfNotNil(r.stdinMaster); stdinMasterError != nil {
+		firstError = stdinMasterError
 	}
 
-	if err := closeIfNotNil(r.stdoutMaster); err != nil {
-		return err
+	if stdoutMasterError := closeIfNotNil(r.stdoutMaster); stdoutMasterError != nil && firstError == nil {
+		firstError = stdoutMasterError
 	}
 
-	if err := closeIfNotNil(r.stderrMaster); err != nil {
-		return err
+	if stderrMasterError := closeIfNotNil(r.stderrMaster); stderrMasterError != nil && firstError == nil {
+		firstError = stderrMasterError
 	}
 
-	return nil
+	return firstError
 }
