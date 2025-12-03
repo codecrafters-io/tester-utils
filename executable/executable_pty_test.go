@@ -173,9 +173,7 @@ func TestRunWithStdinInPty(t *testing.T) {
 
 func TestRunWithStdinTimeoutInPty(t *testing.T) {
 	e := NewExecutable("sleep")
-	// Use larger timeout as compared to non-pty case
-	// because of the overhead incurred by PTY setup
-	e.TimeoutInMilliseconds = 1000
+	e.TimeoutInMilliseconds = 50
 
 	result, err := e.RunWithStdinInPty([]byte(""), "10")
 	assert.Error(t, err)

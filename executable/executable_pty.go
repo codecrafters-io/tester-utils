@@ -9,7 +9,9 @@ import (
 // StartInPty starts the specified command with PTY support but does not wait for it to complete.
 func (e *Executable) StartInPty(args ...string) error {
 	// Use three different PTY pairs
-	// This removes input reflection checks, and segregates stdout and stderr messages of a process
+	// This removes input reflection checks: Anything written to stdin won't appear in stdout/stderr
+	// Stdout and Stderr messages of a process are segregated, allowing a clear approach to
+	// record a process's output streams
 	stdinMaster, stdinSlave, err := pty.Open()
 	if err != nil {
 		return err
@@ -42,6 +44,9 @@ func (e *Executable) StartInPty(args ...string) error {
 		return nil
 	}
 
+	// Close the slave ends of the PTY pair
+	// This is to remove any references to the slave pair in the parent process (tester)
+	// So that when the process exits, all the streams will have been properly closed
 	slaveCloserCallback := func() {
 		stdinSlave.Close()
 		stdoutSlave.Close()
@@ -68,7 +73,9 @@ func (e *Executable) RunWithStdinInPty(stdin []byte, args ...string) (Executable
 		return ExecutableResult{}, err
 	}
 
-	e.stdinStream.Write(stdin)
+	if _, err = e.stdinStream.Write(stdin); err != nil {
+		return ExecutableResult{}, err
+	}
 
 	return e.Wait()
 }

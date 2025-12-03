@@ -100,14 +100,22 @@ func (e *Executable) HasExited() bool {
 
 // Wait waits for the program to finish and results the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
-	if !(isATty(e.stdinStream)) {
-		return e.waitWithEofSignaler(func() { e.stdinStream.Close() })
+	// Closes the stdin stream
+	stdinCloser := func() {
+		e.stdinStream.Close()
+	}
+
+	// Writes VEOF (Ctrl-D) to the stdin stream
+	veofWriter := func() {
+		e.stdinStream.Write([]byte{4})
+	}
+
+	if !isATty(e.stdinStream) {
+		return e.waitWithEofSignaler(stdinCloser)
 	}
 
 	// Write VEOF (equivalent of Ctrl-D to terminal)
-	return e.waitWithEofSignaler(func() {
-		e.stdinStream.Write([]byte{4})
-	})
+	return e.waitWithEofSignaler(veofWriter)
 }
 
 // Kill terminates the program
@@ -149,7 +157,7 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 		// Limit to 30KB (~250 lines at 120 chars per line)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 		if err != nil {
-			// In linux, if the source is a terminal device, io.Copy results in EIO when the process has exitted and closed its slave end
+			// In linux, if the source is a terminal device, read(2) results in EIO when the process has exitted and closed its slave end
 			// (Source: The Linux Programming Interface Appendix F - 64.1)
 			// This can be safely ignored
 			if !(isATty(source) && errors.Is(err, syscall.EIO)) {
@@ -245,11 +253,19 @@ func (e *Executable) startWithCallbacks(stdStreamsInitializerCallback func(cmd *
 	return nil
 }
 
-// waitWithEofSignaler waits for the program to finish and results the result.
+// waitWithCallbacks waits for the program to finish and results the result.
 // The provided signaler function is responsible for sending EOF to the stdin of the process
 func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
+
+		// Close the parent end of the respective streams
+		// Though in case of pipe, stdin is already closed by eof signaler
+		// This is not a problem since it is utilized by PTY executable
+		e.stdinStream.Close()
+		e.stdoutStream.Close()
+		e.stderrStream.Close()
+
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
@@ -263,12 +279,6 @@ func (e *Executable) waitWithEofSignaler(eofSignaler func()) (ExecutableResult, 
 		e.stdoutLineWriter = nil
 		e.stderrLineWriter = nil
 		e.readDone = nil
-
-		// We don't close stdin stream while signaling EOF, so we close it during cleanup
-		if isATty(e.stdinStream) {
-			e.stdinStream.Close()
-		}
-
 		e.stdinStream = nil
 	}()
 
