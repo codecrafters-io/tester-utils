@@ -21,6 +21,8 @@ type Executable struct {
 	Path                  string
 	TimeoutInMilliseconds int
 	loggerFunc            func(string)
+	// If true, the executable's standard streams will be set to PTY instead of pipes
+	ShouldUsePty bool
 
 	ctxWithTimeout context.Context
 	ctxCancelFunc  context.CancelFunc
@@ -40,8 +42,7 @@ type Executable struct {
 	stdoutLineWriter   *linewriter.LineWriter
 	stderrLineWriter   *linewriter.LineWriter
 	readDone           chan bool
-
-	stdioHandler stdioHandler
+	stdioHandler       stdioHandler
 }
 
 // ExecutableResult holds the result of an executable run
@@ -70,24 +71,12 @@ func nullLogger(msg string) {
 }
 
 func (e *Executable) Clone() *Executable {
-	var clonedStdioHandler stdioHandler
-
-	// Instantiate the stdioHandler based on the type used in the source executable
-	switch e.stdioHandler.(type) {
-	case *pipeStdioHandler:
-		clonedStdioHandler = &pipeStdioHandler{}
-	case *ptyStdioHandler:
-		clonedStdioHandler = &ptyStdioHandler{}
-	default:
-		panic("Codecrafters Internal Error - stdioHandler type is unknown")
-	}
-
 	return &Executable{
 		Path:                  e.Path,
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
-		stdioHandler:          clonedStdioHandler,
+		ShouldUsePty:          e.ShouldUsePty,
 	}
 }
 
@@ -97,35 +86,15 @@ func NewExecutable(path string) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            nullLogger,
-		stdioHandler:          &pipeStdioHandler{}, // default stdio handler
 	}
 }
 
 // NewVerboseExecutable returns an Executable struct with a logger configured
-func NewVerboseExecutable(path string, loggerFunc func(string), usePTY bool) *Executable {
-	var stdioHandler stdioHandler
-	if usePTY {
-		stdioHandler = &ptyStdioHandler{}
-	} else {
-		stdioHandler = &pipeStdioHandler{}
-	}
+func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
 	return &Executable{
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
-		stdioHandler:          stdioHandler,
-	}
-}
-
-// SetUsePty switches stdiohandler for executable between pip/pty based on usePty flag
-func (e *Executable) SetUsePty(usePty bool) {
-	if e.isRunning() {
-		panic("Codecrafters Internal Error - SetUsePty called while executable is running")
-	}
-	if usePty {
-		e.stdioHandler = &ptyStdioHandler{}
-	} else {
-		e.stdioHandler = &pipeStdioHandler{}
 	}
 }
 
@@ -135,6 +104,13 @@ func (e *Executable) isRunning() bool {
 
 func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
+}
+
+func (e *Executable) initializeStdioHandler() {
+	e.stdioHandler = &pipeStdioHandler{}
+	if e.ShouldUsePty {
+		e.stdioHandler = &ptyStdioHandler{}
+	}
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -186,21 +162,23 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
+	// Initialize stdio handler
+	e.initializeStdioHandler()
+
 	// Setup standard streams
 	if err := e.stdioHandler.SetupStreams(cmd); err != nil {
 		return err
 	}
 
 	err = cmd.Start()
-	// This can be placed in e.Wait()
-	// As cmd.Start() closes duplicated streams as soon as the process start
-	// this is placed here to repeat the pattern
-	e.stdioHandler.CloseDuplicatedStreamsOfChild()
+	// Close child streams after cmd.Start() regardless of success/failure
+	// cmd.Start() duplicates streams to child, we can close our duplicated copies
+	e.stdioHandler.CloseStreams(child)
 
-	// If an error is encountered at any point here onwards, clean up streams
+	// In case of error, close parent's streams as well
 	defer func() {
 		if err != nil {
-			e.stdioHandler.CleanupStreamsOnStartFailure()
+			e.stdioHandler.CloseStreams(parent)
 		}
 	}()
 
@@ -245,6 +223,8 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 	}()
 }
 
+// Run starts the specified command, waits for it to complete and returns the
+// result.
 func (e *Executable) Run(args ...string) (ExecutableResult, error) {
 	var err error
 
@@ -264,7 +244,7 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 		return ExecutableResult{}, err
 	}
 
-	e.stdioHandler.WriteToStdin(stdin)
+	e.stdioHandler.GetStdin().Write(stdin)
 
 	return e.Wait()
 }
@@ -273,8 +253,8 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
-		// We finally close the FDs used by the parent
-		e.stdioHandler.CleanupStreamsAfterWait()
+		// Close parent's remaining file descriptors
+		e.stdioHandler.CloseStreams(parent)
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
@@ -286,9 +266,10 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.stdoutLineWriter = nil
 		e.stderrLineWriter = nil
 		e.readDone = nil
+		e.stdioHandler = nil
 	}()
 
-	e.stdioHandler.SendEofToStdin()
+	e.stdioHandler.TerminateStdin()
 
 	<-e.readDone
 	<-e.readDone

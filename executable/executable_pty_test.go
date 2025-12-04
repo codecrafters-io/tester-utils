@@ -9,7 +9,7 @@ import (
 
 func getNewExecutableForPTYTests(path string) *Executable {
 	e := NewExecutable(path)
-	e.SetUsePty(true)
+	e.ShouldUsePty = true
 	return e
 }
 

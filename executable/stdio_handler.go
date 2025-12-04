@@ -1,6 +1,7 @@
 package executable
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -8,16 +9,14 @@ import (
 	"github.com/creack/pty"
 )
 
-// (TO_DELETE) This comment will removed after PR review
-// Went with uppercase(public) for interface methods, and used lowercase(private) for implementing
-// struct's method just for visual differentiation
-// Since this interface is private, it should not affect its usage
+type streamOwner int
+
+const (
+	child streamOwner = iota
+	parent
+)
 
 type stdioHandler interface {
-
-	// getStdin(), getStdout(), and getStderr() are only used privately
-	// these methods will allow exposing streams from executable in the future, if needed
-
 	// GetStdin returns stdin on the parent's end
 	GetStdin() io.WriteCloser
 
@@ -30,20 +29,19 @@ type stdioHandler interface {
 	// SetupStreams sets up child process' stdio streams
 	SetupStreams(cmd *exec.Cmd) error
 
-	// CloseStreamsOfChild closes the streams on the parent which were duplicated for the child's stdio streams
-	CloseDuplicatedStreamsOfChild() error
+	// (TODO|REMOVE) I'll remove this after the PR review.
+	// I thought about simplifiying this further
+	// This could just be CloseStreams() and we only deal with closing parent's end of the FD's here, and let SetupStreams() close the child's end of the streams
+	// However, the child's end of the FD's need to be closed AFTER cmd.Start(), but the SetupStreams() is run before cmd.Start()
+	// We could, of course, make SetupStreams() return a callback function to clean up child's FDs, but using callbacks just feels like regressing back to the callback-style pattern
 
-	// CleanupStreamsOnStartFailure cleans up any FDs on the parent side if *exec.cmd.Start() fails
-	CleanupStreamsOnStartFailure() error
+	// CloseStreams closes file descriptors based on stream owner
+	// Child: closes FDs duplicated for child (called after cmd.Start())
+	// Parent: closes parent's remaining FDs (called during cleanup)
+	CloseStreams(owner streamOwner) error
 
-	// CleanupStreamsAfterWait closes the parent's end of the child's stdio streams
-	CleanupStreamsAfterWait() error
-
-	// WriteToStdinStream writes to child's stdin stream
-	WriteToStdin(input []byte) (int, error)
-
-	// SendEofToStdin sends EOF to the child's stdin stream
-	SendEofToStdin() error
+	// TerminateStdin terminates the stdin interface of the child (effectively closes it)
+	TerminateStdin() error
 }
 
 // pipeStdioHandler deals with pipe based i/o
@@ -83,55 +81,31 @@ func (h *pipeStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	return nil
 }
 
-func (h *pipeStdioHandler) CloseDuplicatedStreamsOfChild() error {
-	// No implementation; this is automatically handled by *exec.Cmd.Start()
-	return nil
-}
-
-func (h *pipeStdioHandler) CleanupStreamsOnStartFailure() (err error) {
-	defer func() {
-		h.stdoutPipe = nil
-		h.stderrPipe = nil
-		h.stdinPipe = nil
-	}()
-
-	// Close all streams regardless of errors to prevent fd leaks
-	// Return the first error encountered, if any
-	var firstError error
-
-	if stdoutCloseError := h.stdoutPipe.Close(); stdoutCloseError != nil {
-		firstError = stdoutCloseError
+func (h *pipeStdioHandler) CloseStreams(owner streamOwner) error {
+	switch owner {
+	case child:
+		// No action needed here: closing child streams is automatically handled by exec library
+		return nil
+	case parent:
+		return h.closeParentStreams()
+	default:
+		panic(fmt.Sprintf("Codecrafters Internal Error - Wrong owner type in pipeStdioHandler.CloseStreams(): %v", owner))
 	}
-
-	if stderrCloseError := h.stderrPipe.Close(); stderrCloseError != nil && firstError == nil {
-		firstError = stderrCloseError
-	}
-
-	if stdinCloseError := h.stdinPipe.Close(); stdinCloseError != nil && firstError == nil {
-		firstError = stdinCloseError
-	}
-
-	return firstError
 }
 
-func (h *pipeStdioHandler) CleanupStreamsAfterWait() error {
-	// No need to close pipes; this is automatically handled by *exec.Cmd.Wait()
-	h.stdinPipe = nil
-	h.stdoutPipe = nil
-	h.stderrPipe = nil
-	return nil
-}
-
-func (h *pipeStdioHandler) WriteToStdin(input []byte) (int, error) {
-	return h.stdinPipe.Write(input)
-}
-
-func (h *pipeStdioHandler) SendEofToStdin() error {
+func (h *pipeStdioHandler) TerminateStdin() error {
 	if err := h.stdinPipe.Close(); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (h *pipeStdioHandler) closeParentStreams() error {
+	// In case of pipes, closing of parent streams may automatically handled by the exec library in certain cases
+	// For eg. if cmd.Start() fails, or after cmd.Wait() is run
+	// So, we close the parent streams only if they're not already closed
+	return closeStdStreamsUsingCloserFunction(closeIfOpen, h.stdinPipe, h.stdoutPipe, h.stderrPipe)
 }
 
 // ptyStdioHandler deals with PTY based i/o
@@ -166,53 +140,23 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	return nil
 }
 
-func (h *ptyStdioHandler) CloseDuplicatedStreamsOfChild() error {
-	return h.closeSlaves()
-}
-
-func (h *ptyStdioHandler) CleanupStreamsOnStartFailure() error {
-	defer func() {
-		h.resetAll()
-	}()
-
-	if err := h.closeMasters(); err != nil {
-		return err
+func (h *ptyStdioHandler) CloseStreams(owner streamOwner) error {
+	switch owner {
+	case child:
+		// Close slave ends - child process now owns them
+		return h.closeSlaves()
+	case parent:
+		// Close master ends - parent cleanup
+		return h.closeMasters()
+	default:
+		panic(fmt.Sprintf("Codecrafters Internal Error - Wrong owner type in pipeStdioHandler.CloseStreams(): %v", owner))
 	}
-
-	return nil
 }
 
-func (h *ptyStdioHandler) CleanupStreamsAfterWait() error {
-	defer func() {
-		h.resetAll()
-	}()
-
-	if err := h.closeMasters(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (h *ptyStdioHandler) WriteToStdin(input []byte) (int, error) {
-	duplicatedInput := make([]byte, len(input))
-	copy(duplicatedInput, input)
-	inputWithNewline := append(duplicatedInput, byte('\n'))
-	return h.stdinMaster.Write(inputWithNewline)
-}
-
-func (h *ptyStdioHandler) SendEofToStdin() error {
-	_, err := h.stdinMaster.Write([]byte{4})
+func (h *ptyStdioHandler) TerminateStdin() error {
+	// Send (\n + Ctrl-D) for closing input stream
+	_, err := h.stdinMaster.Write([]byte("\n\004"))
 	return err
-}
-
-func (h *ptyStdioHandler) resetAll() {
-	h.stdinMaster = nil
-	h.stdoutMaster = nil
-	h.stderrMaster = nil
-	h.stdinSlave = nil
-	h.stdoutSlave = nil
-	h.stderrSlave = nil
 }
 
 // openAll attempts to open all three PTY pairs.
@@ -228,14 +172,12 @@ func (r *ptyStdioHandler) openAll() error {
 	r.stdoutMaster, r.stdoutSlave, err = pty.Open()
 	if err != nil {
 		r.closeAll()
-		r.resetAll()
 		return err
 	}
 
 	r.stderrMaster, r.stderrSlave, err = pty.Open()
 	if err != nil {
 		r.closeAll()
-		r.resetAll()
 		return err
 	}
 
@@ -244,49 +186,26 @@ func (r *ptyStdioHandler) openAll() error {
 
 // closeAll closes all PTY file descriptors.
 func (r *ptyStdioHandler) closeAll() error {
-	if err := r.closeMasters(); err != nil {
-		return err
+	var firstError error
+
+	// best effort
+	if closeMasterError := r.closeMasters(); closeMasterError != nil {
+		firstError = closeMasterError
 	}
 
-	return r.closeSlaves()
+	if closeSlaveError := r.closeSlaves(); closeSlaveError != nil && firstError == nil {
+		firstError = closeSlaveError
+	}
+
+	return firstError
 }
 
 // closeSlaves closes only the slave ends of the PTY pairs.
 func (r *ptyStdioHandler) closeSlaves() error {
-	var firstError error
-
-	// best effort
-	if stdinSlaveError := closeIfNotNil(r.stdinSlave); stdinSlaveError != nil {
-		firstError = stdinSlaveError
-	}
-
-	if stdoutSlaveError := closeIfNotNil(r.stdoutSlave); stdoutSlaveError != nil && firstError == nil {
-		firstError = stdoutSlaveError
-	}
-
-	if stderrSlaveError := closeIfNotNil(r.stderrSlave); stderrSlaveError != nil && firstError == nil {
-		firstError = stderrSlaveError
-	}
-
-	return firstError
+	return closeStdStreamsUsingCloserFunction(closeIfNotNil, r.stdinSlave, r.stdoutSlave, r.stderrSlave)
 }
 
 // closeMasters closes only the master ends of the PTY pairs.
 func (r *ptyStdioHandler) closeMasters() error {
-	var firstError error
-
-	// best effort
-	if stdinMasterError := closeIfNotNil(r.stdinMaster); stdinMasterError != nil {
-		firstError = stdinMasterError
-	}
-
-	if stdoutMasterError := closeIfNotNil(r.stdoutMaster); stdoutMasterError != nil && firstError == nil {
-		firstError = stdoutMasterError
-	}
-
-	if stderrMasterError := closeIfNotNil(r.stderrMaster); stderrMasterError != nil && firstError == nil {
-		firstError = stderrMasterError
-	}
-
-	return firstError
+	return closeStdStreamsUsingCloserFunction(closeIfNotNil, r.stdinMaster, r.stdoutMaster, r.stderrMaster)
 }

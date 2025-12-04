@@ -121,7 +121,7 @@ func (tester Tester) getQuietExecutable() *executable.Executable {
 }
 
 func (tester Tester) getExecutable() *executable.Executable {
-	return executable.NewVerboseExecutable(tester.context.ExecutablePath, logger.GetLogger(true, "[your_program] ").Plainln, false)
+	return executable.NewVerboseExecutable(tester.context.ExecutablePath, logger.GetLogger(true, "[your_program] ").Plainln)
 }
 
 func (tester Tester) validateContext() error {
