@@ -102,10 +102,10 @@ func (h *pipeStdioHandler) TerminateStdin() error {
 }
 
 func (h *pipeStdioHandler) closeParentStreams() error {
-	// In case of pipes, closing of parent streams may automatically handled by the exec library in certain cases
+	// In case of pipes, closing of parent streams may be automatically handled by the exec library in certain cases
 	// For eg. if cmd.Start() fails, or after cmd.Wait() is run
 	// So, we close the parent streams only if they're not already closed
-	return closeStdStreamsUsingCloserFunction(closeIfOpen, h.stdinPipe, h.stdoutPipe, h.stderrPipe)
+	return closeAllWithCloserFunc(closeIfOpen, h.stdinPipe, h.stdoutPipe, h.stderrPipe)
 }
 
 // ptyStdioHandler deals with PTY based i/o
@@ -202,10 +202,12 @@ func (r *ptyStdioHandler) closeAll() error {
 
 // closeSlaves closes only the slave ends of the PTY pairs.
 func (r *ptyStdioHandler) closeSlaves() error {
-	return closeStdStreamsUsingCloserFunction(closeIfNotNil, r.stdinSlave, r.stdoutSlave, r.stderrSlave)
+	// PTY are managed by ptyStdioHandler alone, and are not modified externally, so
+	// closeIfOpen() is not needed here
+	return closeAllWithCloserFunc(closeIfNotNil, r.stdinSlave, r.stdoutSlave, r.stderrSlave)
 }
 
 // closeMasters closes only the master ends of the PTY pairs.
 func (r *ptyStdioHandler) closeMasters() error {
-	return closeStdStreamsUsingCloserFunction(closeIfNotNil, r.stdinMaster, r.stdoutMaster, r.stderrMaster)
+	return closeAllWithCloserFunc(closeIfNotNil, r.stdinMaster, r.stdoutMaster, r.stderrMaster)
 }

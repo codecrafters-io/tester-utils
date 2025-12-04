@@ -41,22 +41,14 @@ func closeIfOpen(c io.Closer) error {
 	return nil
 }
 
-// closeStdStreamsUsingCloserFunction attempts to close stdin, stdout, and stderr using the provided close function.
-// Returns the first error encountered, but continues attempting to close all streams.
-func closeStdStreamsUsingCloserFunction(closeFunc func(io.Closer) error, stdin, stdout, stderr io.Closer) error {
+// closeAllWithCloserFunc makes best effort (attempts to close all even in case of error)
+// to close all the io.Closer interfacs using the provided closer function.
+func closeAllWithCloserFunc(closer func(io.Closer) error, streams ...io.Closer) error {
 	var firstError error
-
-	if stdinError := closeFunc(stdin); stdinError != nil {
-		firstError = stdinError
+	for _, stream := range streams {
+		if err := closer(stream); err != nil && firstError == nil {
+			firstError = err
+		}
 	}
-
-	if stdoutError := closeFunc(stdout); stdoutError != nil && firstError == nil {
-		firstError = stdoutError
-	}
-
-	if stderrError := closeFunc(stderr); stderrError != nil && firstError == nil {
-		firstError = stderrError
-	}
-
 	return firstError
 }
