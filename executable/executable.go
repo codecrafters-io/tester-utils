@@ -18,7 +18,14 @@ import (
 
 // Executable represents a program that can be executed
 type Executable struct {
-	Path                  string
+	Path string
+
+	// Use a field like this instead of the SetUsePty method.
+	// This is more consistent with the other fields we use.
+	// All these fields (Path, WorkingDir etc.) are set before a program is run and will not take any effect after the program is running.
+	// If we expose a SetUsePty method, it's possible to accidentally use that after a program is running (and mistakenly switch StdioHandler midway)
+	ShouldUsePTY bool
+
 	TimeoutInMilliseconds int
 	loggerFunc            func(string)
 
@@ -41,6 +48,7 @@ type Executable struct {
 	stderrLineWriter   *linewriter.LineWriter
 	readDone           chan bool
 
+	// Club this with the fields above that are set and removed together. They're set in Start and removed in Wait.
 	stdioHandler stdioHandler
 }
 
@@ -109,23 +117,13 @@ func NewVerboseExecutable(path string, loggerFunc func(string), usePTY bool) *Ex
 	} else {
 		stdioHandler = &pipeStdioHandler{}
 	}
+
+	// TODO: Move setting of stdioHandler to Start(), also remove usePTY flag from function signature
 	return &Executable{
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
 		stdioHandler:          stdioHandler,
-	}
-}
-
-// SetUsePty switches stdiohandler for executable between pip/pty based on usePty flag
-func (e *Executable) SetUsePty(usePty bool) {
-	if e.isRunning() {
-		panic("Codecrafters Internal Error - SetUsePty called while executable is running")
-	}
-	if usePty {
-		e.stdioHandler = &ptyStdioHandler{}
-	} else {
-		e.stdioHandler = &pipeStdioHandler{}
 	}
 }
 
