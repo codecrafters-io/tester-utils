@@ -149,7 +149,7 @@ func (h *ptyStdioHandler) CloseStreams(owner streamOwner) error {
 		// Close master ends - parent cleanup
 		return h.closeMasters()
 	default:
-		panic(fmt.Sprintf("Codecrafters Internal Error - Wrong owner type in pipeStdioHandler.CloseStreams(): %v", owner))
+		panic(fmt.Sprintf("Codecrafters Internal Error - Wrong owner type in ptyStdioHandler.CloseStreams(): %v", owner))
 	}
 }
 
