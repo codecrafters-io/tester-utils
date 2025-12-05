@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"reflect"
 
 	"github.com/mattn/go-isatty"
 )
@@ -20,20 +21,19 @@ func isTTY(o any) bool {
 
 // closeIfNotNil closes an io.Closer if it is not already closed
 func closeIfNotNil(c io.Closer) error {
-	if c != nil {
-		return c.Close()
+	v := reflect.ValueOf(c)
+
+	if v.Kind() == reflect.Pointer && v.IsNil() {
+		return nil
 	}
 
-	return nil
+	return c.Close()
 }
 
 // closeIfOpen closes an io.Closer if it is not already closed
 func closeIfOpen(c io.Closer) error {
-	if c == nil {
-		return nil
-	}
-
 	err := c.Close()
+
 	if err != nil && !errors.Is(err, os.ErrClosed) {
 		return err
 	}

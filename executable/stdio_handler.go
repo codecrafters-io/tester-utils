@@ -58,10 +58,13 @@ func (h *pipeStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	}
 
 	if h.stdoutPipe, err = cmd.StdoutPipe(); err != nil {
+		h.stdinPipe.Close()
 		return err
 	}
 
 	if h.stderrPipe, err = cmd.StderrPipe(); err != nil {
+		h.stdinPipe.Close()
+		h.stdoutPipe.Close()
 		return err
 	}
 
