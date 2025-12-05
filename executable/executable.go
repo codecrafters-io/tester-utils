@@ -173,12 +173,12 @@ func (e *Executable) Start(args ...string) error {
 	err = cmd.Start()
 	// Close child streams after cmd.Start() regardless of success/failure
 	// cmd.Start() duplicates streams to child, we can close our duplicated copies
-	e.stdioHandler.CloseStreams(child)
+	e.stdioHandler.CloseChildStreams()
 
 	// In case of error, close parent's streams as well
 	defer func() {
 		if err != nil {
-			e.stdioHandler.CloseStreams(parent)
+			e.stdioHandler.CloseParentStreams()
 		}
 	}()
 
@@ -254,7 +254,7 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
 		// Close parent's remaining file descriptors
-		e.stdioHandler.CloseStreams(parent)
+		e.stdioHandler.CloseParentStreams()
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil

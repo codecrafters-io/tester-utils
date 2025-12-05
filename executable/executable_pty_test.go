@@ -98,7 +98,6 @@ func TestLargeOutputCaptureInPty(t *testing.T) {
 
 func TestExitCodeInPty(t *testing.T) {
 	e := getNewExecutableForPTYTests("./test_helpers/exit_with.sh")
-	e.TimeoutInMilliseconds = 3600 * 1000
 
 	result, _ := e.RunWithStdin([]byte(""), "0")
 	assert.Equal(t, 0, result.ExitCode)

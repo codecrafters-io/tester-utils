@@ -1,19 +1,11 @@
 package executable
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
 
 	"github.com/creack/pty"
-)
-
-type streamOwner int
-
-const (
-	child streamOwner = iota
-	parent
 )
 
 type stdioHandler interface {
@@ -29,16 +21,11 @@ type stdioHandler interface {
 	// SetupStreams sets up child process' stdio streams
 	SetupStreams(cmd *exec.Cmd) error
 
-	// (TODO|REMOVE) I'll remove this after the PR review.
-	// I thought about simplifiying this further
-	// This could just be CloseStreams() and we only deal with closing parent's end of the FD's here, and let SetupStreams() close the child's end of the streams
-	// However, the child's end of the FD's need to be closed AFTER cmd.Start(), but the SetupStreams() is run before cmd.Start()
-	// We could, of course, make SetupStreams() return a callback function to clean up child's FDs, but using callbacks just feels like regressing back to the callback-style pattern
+	// CloseChildStreams closes the FDs duplicated for child (called after cmd.Start())
+	CloseChildStreams() error
 
-	// CloseStreams closes file descriptors based on stream owner
-	// Child: closes FDs duplicated for child (called after cmd.Start())
-	// Parent: closes parent's remaining FDs (called during cleanup)
-	CloseStreams(owner streamOwner) error
+	// CloseParentStreams() closes the FDs on the parent's end
+	CloseParentStreams() error
 
 	// TerminateStdin terminates the stdin interface of the child (effectively closes it)
 	TerminateStdin() error
@@ -81,16 +68,13 @@ func (h *pipeStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	return nil
 }
 
-func (h *pipeStdioHandler) CloseStreams(owner streamOwner) error {
-	switch owner {
-	case child:
-		// No action needed here: closing child streams is automatically handled by exec library
-		return nil
-	case parent:
-		return h.closeParentStreams()
-	default:
-		panic(fmt.Sprintf("Codecrafters Internal Error - Wrong owner type in pipeStdioHandler.CloseStreams(): %v", owner))
-	}
+func (h *pipeStdioHandler) CloseChildStreams() error {
+	// No action needed here: closing child streams is automatically handled by exec library
+	return nil
+}
+
+func (h *pipeStdioHandler) CloseParentStreams() error {
+	return closeAllWithCloserFunc(closeIfOpen, h.stdinPipe, h.stdoutPipe, h.stderrPipe)
 }
 
 func (h *pipeStdioHandler) TerminateStdin() error {
@@ -99,13 +83,6 @@ func (h *pipeStdioHandler) TerminateStdin() error {
 	}
 
 	return nil
-}
-
-func (h *pipeStdioHandler) closeParentStreams() error {
-	// In case of pipes, closing of parent streams may be automatically handled by the exec library in certain cases
-	// For eg. if cmd.Start() fails, or after cmd.Wait() is run
-	// So, we close the parent streams only if they're not already closed
-	return closeAllWithCloserFunc(closeIfOpen, h.stdinPipe, h.stdoutPipe, h.stderrPipe)
 }
 
 // ptyStdioHandler deals with PTY based i/o
@@ -140,17 +117,13 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	return nil
 }
 
-func (h *ptyStdioHandler) CloseStreams(owner streamOwner) error {
-	switch owner {
-	case child:
-		// Close slave ends - child process now owns them
-		return h.closeSlaves()
-	case parent:
-		// Close master ends - parent cleanup
-		return h.closeMasters()
-	default:
-		panic(fmt.Sprintf("Codecrafters Internal Error - Wrong owner type in ptyStdioHandler.CloseStreams(): %v", owner))
-	}
+func (h *ptyStdioHandler) CloseChildStreams() error {
+	// Close slave ends - child process now owns them
+	return h.closeSlaves()
+}
+
+func (h *ptyStdioHandler) CloseParentStreams() error {
+	return h.closeMasters()
 }
 
 func (h *ptyStdioHandler) TerminateStdin() error {
