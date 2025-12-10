@@ -21,6 +21,8 @@ type Executable struct {
 	Path                  string
 	TimeoutInMilliseconds int
 	loggerFunc            func(string)
+	// If true, the executable's standard streams will be set to PTY instead of pipes
+	ShouldUsePty bool
 
 	ctxWithTimeout context.Context
 	ctxCancelFunc  context.CancelFunc
@@ -30,13 +32,9 @@ type Executable struct {
 
 	Process *os.Process
 
-	StdinPipe io.WriteCloser
-
 	// These are set & removed together
 	atleastOneReadDone bool
 	cmd                *exec.Cmd
-	stdoutPipe         io.ReadCloser
-	stderrPipe         io.ReadCloser
 	stdoutBytes        []byte
 	stderrBytes        []byte
 	stdoutBuffer       *bytes.Buffer
@@ -44,6 +42,7 @@ type Executable struct {
 	stdoutLineWriter   *linewriter.LineWriter
 	stderrLineWriter   *linewriter.LineWriter
 	readDone           chan bool
+	stdioHandler       stdioHandler
 }
 
 // ExecutableResult holds the result of an executable run
@@ -69,7 +68,6 @@ func (w *loggerWriter) Write(bytes []byte) (n int, err error) {
 }
 
 func nullLogger(msg string) {
-	return
 }
 
 func (e *Executable) Clone() *Executable {
@@ -78,17 +76,26 @@ func (e *Executable) Clone() *Executable {
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
+		ShouldUsePty:          e.ShouldUsePty,
 	}
 }
 
 // NewExecutable returns an Executable
 func NewExecutable(path string) *Executable {
-	return &Executable{Path: path, TimeoutInMilliseconds: 10 * 1000, loggerFunc: nullLogger}
+	return &Executable{
+		Path:                  path,
+		TimeoutInMilliseconds: 10 * 1000,
+		loggerFunc:            nullLogger,
+	}
 }
 
 // NewVerboseExecutable returns an Executable struct with a logger configured
 func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
-	return &Executable{Path: path, TimeoutInMilliseconds: 10 * 1000, loggerFunc: loggerFunc}
+	return &Executable{
+		Path:                  path,
+		TimeoutInMilliseconds: 10 * 1000,
+		loggerFunc:            loggerFunc,
+	}
 }
 
 func (e *Executable) isRunning() bool {
@@ -97,6 +104,13 @@ func (e *Executable) isRunning() bool {
 
 func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
+}
+
+func (e *Executable) initializeStdioHandler() {
+	e.stdioHandler = &pipeStdioHandler{}
+	if e.ShouldUsePty {
+		e.stdioHandler = &ptyStdioHandler{}
+	}
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -140,29 +154,34 @@ func (e *Executable) Start(args ...string) error {
 	e.readDone = make(chan bool)
 	e.atleastOneReadDone = false
 
-	// Setup stdout capture
-	e.stdoutPipe, err = cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
-	// Setup stderr relay
-	e.stderrPipe, err = cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
-	e.StdinPipe, err = cmd.StdinPipe()
-	if err != nil {
+	// Initialize stdio handler
+	e.initializeStdioHandler()
+
+	// Setup standard streams
+	if err := e.stdioHandler.SetupStreams(cmd); err != nil {
 		return err
 	}
+
 	err = cmd.Start()
+	// Close child streams after cmd.Start() regardless of success/failure
+	// cmd.Start() duplicates streams to child, we can close our duplicated copies
+	e.stdioHandler.CloseChildStreams()
+
+	// In case of error, close parent's streams as well
+	defer func() {
+		if err != nil {
+			e.stdioHandler.CloseParentStreams()
+		}
+	}()
+
 	if err != nil {
 		return err
 	}
@@ -174,8 +193,8 @@ func (e *Executable) Start(args ...string) error {
 
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
 	e.cmd = cmd
-	e.setupIORelay(e.stdoutPipe, e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stderrPipe, e.stderrBuffer, e.stderrLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
 
 	return nil
 }
@@ -186,7 +205,12 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 		// Limit to 30KB (~250 lines at 120 chars per line)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 		if err != nil {
-			panic(err)
+			// In linux, if the source is a terminal device, read(2) results in EIO when the child process has exited and closed its slave end
+			// (Source: The Linux Programming Interface Appendix F - 64.1)
+			// This can be safely ignored
+			if !(isTTY(source) && errors.Is(err, syscall.EIO)) {
+				panic(err)
+			}
 		}
 
 		if bytesWritten == 30000 {
@@ -195,7 +219,7 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 
 		e.atleastOneReadDone = true
 		e.readDone <- true
-		io.Copy(io.Discard, source) // Let's drain the pipe in case any content is leftover
+		io.Copy(io.Discard, source) // Let's drain the stream in case any content is leftover
 	}()
 }
 
@@ -220,21 +244,21 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 		return ExecutableResult{}, err
 	}
 
-	e.StdinPipe.Write(stdin)
+	e.stdioHandler.GetStdin().Write(stdin)
 
 	return e.Wait()
 }
 
-// Wait waits for the program to finish and results the result
+// Wait waits for the program to finish and returns the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
+		// Close parent's remaining file descriptors
+		e.stdioHandler.CloseParentStreams()
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
-		e.stdoutPipe = nil
-		e.stderrPipe = nil
 		e.stdoutBuffer = nil
 		e.stderrBuffer = nil
 		e.stdoutBytes = nil
@@ -242,10 +266,10 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.stdoutLineWriter = nil
 		e.stderrLineWriter = nil
 		e.readDone = nil
-		e.StdinPipe = nil
+		e.stdioHandler = nil
 	}()
 
-	e.StdinPipe.Close()
+	e.stdioHandler.TerminateStdin()
 
 	<-e.readDone
 	<-e.readDone
