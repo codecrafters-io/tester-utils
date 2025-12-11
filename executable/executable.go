@@ -18,37 +18,44 @@ import (
 
 // Executable represents a program that can be executed
 type Executable struct {
-	Path                  string
+	// Path is the path to the executable.
+	Path string
+
+	// TimeoutInMilliseconds is the maximum time the process can run.
 	TimeoutInMilliseconds int
-	loggerFunc            func(string)
-	// If true, the executable's standard streams will be set to PTY instead of pipes
-	ShouldUsePty bool
-
-	ctxWithTimeout context.Context
-	ctxCancelFunc  context.CancelFunc
-
-	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
-	WorkingDir string
 
 	// MemoryLimitInBytes sets the maximum memory the process can use (Linux only).
 	// If exceeded, the process will be killed and an error will be returned.
 	// Defaults to 2GB. Set to 0 to disable memory limiting.
 	MemoryLimitInBytes int64
 
+	// ShouldUsePty controls whether the executable's standard streams should be set to PTY instead of pipes.
+	ShouldUsePty bool
+
+	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
+	WorkingDir string
+
+	// Process is the os.Process object for the executable.
+	// TODO: See if this actually needs to be exported?
 	Process *os.Process
+
+	// loggerFunc is the function called w/ output from the executable.
+	loggerFunc func(string)
 
 	// These are set & removed together
 	atleastOneReadDone bool
-	cmd                *exec.Cmd
-	stdoutBytes        []byte
-	stderrBytes        []byte
-	stdoutBuffer       *bytes.Buffer
-	stderrBuffer       *bytes.Buffer
-	stdoutLineWriter   *linewriter.LineWriter
-	stderrLineWriter   *linewriter.LineWriter
-	readDone           chan bool
-	stdioHandler       stdioHandler
 	cgroupManager      *cgroupManager // Platform-specific cgroup manager
+	cmd                *exec.Cmd
+	ctxCancelFunc      context.CancelFunc
+	ctxWithTimeout     context.Context
+	readDone           chan bool
+	stderrBuffer       *bytes.Buffer
+	stderrBytes        []byte
+	stderrLineWriter   *linewriter.LineWriter
+	stdioHandler       stdioHandler
+	stdoutBuffer       *bytes.Buffer
+	stdoutBytes        []byte
+	stdoutLineWriter   *linewriter.LineWriter
 }
 
 // ExecutableResult holds the result of an executable run
