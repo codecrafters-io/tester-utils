@@ -305,7 +305,9 @@ func (l *Logger) Debugln(msg string) {
 }
 
 func (l *Logger) Plainf(fstring string, args ...any) {
-	for _, line := range plainColorize(fstring, args...) {
+	formattedString := fmt.Sprintf(fstring, args...)
+
+	for _, line := range plainColorize("%s", formattedString) {
 		l.logger.Println(line)
 	}
 }
