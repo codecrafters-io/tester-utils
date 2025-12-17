@@ -50,6 +50,10 @@ func yellowColorize(fstring string, args ...any) []string {
 	return colorize(color.FgYellow, fstring, args...)
 }
 
+func plainColorize(fstring string, args ...any) []string {
+	return colorize(color.Reset, fstring, args...)
+}
+
 // globalLogMutex serializes all logging operations for this package
 var globalLogMutex sync.Mutex
 
@@ -301,17 +305,13 @@ func (l *Logger) Debugln(msg string) {
 }
 
 func (l *Logger) Plainf(fstring string, args ...any) {
-	formattedString := fmt.Sprintf(fstring, args...)
-
-	for line := range strings.SplitSeq(formattedString, "\n") {
+	for _, line := range plainColorize(fstring, args...) {
 		l.logger.Println(line)
 	}
 }
 
 func (l *Logger) Plainln(msg string) {
-	lines := strings.SplitSeq(msg, "\n")
-
-	for line := range lines {
+	for _, line := range plainColorize("%s", msg) {
 		l.logger.Println(line)
 	}
 }
