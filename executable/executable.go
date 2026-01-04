@@ -44,7 +44,7 @@ type Executable struct {
 
 	// These are set & removed together
 	atleastOneReadDone bool
-	cgroupManager      *cgroupManager // Platform-specific cgroup manager
+	memoryMonitor      *memoryMonitor // Monitors process memory usage and kills if limit exceeded
 	cmd                *exec.Cmd
 	ctxCancelFunc      context.CancelFunc
 	ctxWithTimeout     context.Context
@@ -170,6 +170,11 @@ func (e *Executable) Start(args ...string) error {
 	cmd := exec.CommandContext(ctx, e.Path, args...)
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// Create memory monitor and apply hard memory limit via RLIMIT_AS (Linux only, no-op on other platforms)
+	e.memoryMonitor = newMemoryMonitor(e.MemoryLimitInBytes)
+	e.memoryMonitor.applyHardMemoryLimit(cmd.SysProcAttr)
+
 	e.readDone = make(chan bool)
 	e.atleastOneReadDone = false
 
@@ -213,13 +218,8 @@ func (e *Executable) Start(args ...string) error {
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
 	e.cmd = cmd
 
-	// Setup cgroup for memory limiting (Linux only, no-op on other platforms)
-	e.cgroupManager, err = newCgroupManager(e.MemoryLimitInBytes, cmd.Process.Pid)
-	if err != nil {
-		// Log warning but don't fail - cgroup setup may require elevated privileges
-		e.loggerFunc(fmt.Sprintf("Warning: failed to setup memory limit: %v", err))
-		e.cgroupManager = nil
-	}
+	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
+	e.memoryMonitor.start(cmd.Process.Pid)
 
 	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
 	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
@@ -302,10 +302,10 @@ var ErrMemoryLimitExceeded = errors.New("process exceeded memory limit")
 // Wait waits for the program to finish and returns the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
-		// Cleanup cgroup
-		if e.cgroupManager != nil {
-			e.cgroupManager.cleanup()
-			e.cgroupManager = nil
+		// Stop memory monitor
+		if e.memoryMonitor != nil {
+			e.memoryMonitor.stop()
+			e.memoryMonitor = nil
 		}
 
 		e.ctxCancelFunc()
@@ -367,7 +367,7 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	}
 
 	// Check if process was killed due to OOM (exit code 137 = 128 + SIGKILL)
-	if exitCode == 137 && e.cgroupManager != nil && e.cgroupManager.wasOOMKilled() {
+	if e.memoryMonitor != nil && e.memoryMonitor.wasOOMKilled() {
 		return result, fmt.Errorf("process exceeded memory limit (%s): %w", formatBytesHumanReadable(e.MemoryLimitInBytes), ErrMemoryLimitExceeded)
 	}
 
