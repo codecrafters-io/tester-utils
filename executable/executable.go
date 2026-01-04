@@ -171,9 +171,7 @@ func (e *Executable) Start(args ...string) error {
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// Create memory monitor and apply hard memory limit via RLIMIT_AS (Linux only, no-op on other platforms)
 	e.memoryMonitor = newMemoryMonitor(e.MemoryLimitInBytes)
-	e.memoryMonitor.applyHardMemoryLimit(cmd.SysProcAttr)
 
 	e.readDone = make(chan bool)
 	e.atleastOneReadDone = false
@@ -302,19 +300,16 @@ var ErrMemoryLimitExceeded = errors.New("process exceeded memory limit")
 // Wait waits for the program to finish and returns the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
-		// Stop memory monitor
-		if e.memoryMonitor != nil {
-			e.memoryMonitor.stop()
-			e.memoryMonitor = nil
-		}
-
 		e.ctxCancelFunc()
-		// Close parent's remaining file descriptors
+
+		e.memoryMonitor.stop()
 		e.stdioHandler.CloseParentStreams()
+
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
+		e.memoryMonitor = nil
 		e.stdoutBuffer = nil
 		e.stderrBuffer = nil
 		e.stdoutBytes = nil
@@ -367,7 +362,7 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	}
 
 	// Check if process was killed due to OOM (exit code 137 = 128 + SIGKILL)
-	if e.memoryMonitor != nil && e.memoryMonitor.wasOOMKilled() {
+	if e.memoryMonitor.wasOOMKilled() {
 		return result, fmt.Errorf("process exceeded memory limit (%s): %w", formatBytesHumanReadable(e.MemoryLimitInBytes), ErrMemoryLimitExceeded)
 	}
 

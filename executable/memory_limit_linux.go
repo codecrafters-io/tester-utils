@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // memoryMonitor monitors process memory usage via /proc and kills if limit exceeded
@@ -37,6 +39,13 @@ func (m *memoryMonitor) start(pid int) {
 	if m.limit <= 0 {
 		return
 	}
+
+	// Apply hard virtual memory limit via RLIMIT_AS as a safety net.
+	// We set it to 3x the actual limit since RLIMIT_AS limits virtual address space,
+	// which is typically much larger than actual RSS usage.
+	virtualLimit := uint64(m.limit * 3)
+	rlimit := unix.Rlimit{Cur: virtualLimit, Max: virtualLimit}
+	unix.Prlimit(pid, unix.RLIMIT_AS, &rlimit, nil)
 
 	m.pid = pid
 	m.stopChan = make(chan struct{})
@@ -176,19 +185,3 @@ func getChildPIDs(pid int) ([]int, error) {
 	return children, nil
 }
 
-// applyHardMemoryLimit sets RLIMIT_AS as a hard ceiling for virtual memory.
-// This is used as a safety net - we set it to 3x the actual limit since RLIMIT_AS
-// limits virtual memory, not RSS.
-func (m *memoryMonitor) applyHardMemoryLimit(sysProcAttr *syscall.SysProcAttr) {
-	if m.limit <= 0 {
-		return
-	}
-
-	// Use 3x multiplier since RLIMIT_AS limits virtual address space, not RSS
-	// Virtual memory is typically much larger than actual RSS usage
-	virtualLimit := uint64(m.limit * 3)
-
-	sysProcAttr.Rlimit = []syscall.Rlimit{
-		{Type: syscall.RLIMIT_AS, Cur: virtualLimit, Max: virtualLimit},
-	}
-}

@@ -2,8 +2,6 @@
 
 package executable
 
-import "syscall"
-
 // memoryMonitor is a no-op on non-Linux platforms
 type memoryMonitor struct{}
 
@@ -22,8 +20,3 @@ func (m *memoryMonitor) wasOOMKilled() bool {
 
 // stop is a no-op on non-Linux platforms
 func (m *memoryMonitor) stop() {}
-
-// applyHardMemoryLimit is a no-op on non-Linux platforms
-func (m *memoryMonitor) applyHardMemoryLimit(sysProcAttr *syscall.SysProcAttr) {
-	// Memory limiting via RLIMIT_AS is only supported on Linux
-}
