@@ -232,6 +232,8 @@ func TestMemoryLimit(t *testing.T) {
 
 	result, err := e.Run()
 	fmt.Println("⛳ result.ExitCode:", result.ExitCode)
+	fmt.Println("⛳ result.stdout:", string(result.Stdout))
+	fmt.Println("⛳ result.stderr:", string(result.Stderr))
 	assert.True(t, errors.Is(err, ErrMemoryLimitExceeded), "Expected ErrMemoryLimitExceeded, got: %v", err)
 	if err != nil {
 		assert.Contains(t, err.Error(), "50 MB", "Error message should contain human-readable memory limit")
