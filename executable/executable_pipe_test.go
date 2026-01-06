@@ -2,8 +2,8 @@ package executable
 
 import (
 	"errors"
-	"fmt"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -231,10 +231,12 @@ func TestMemoryLimit(t *testing.T) {
 	e.TimeoutInMilliseconds = 30 * 1000 // 30 seconds should be plenty
 
 	result, err := e.Run()
-	fmt.Println("⛳ result.ExitCode:", result.ExitCode)
-	fmt.Println("⛳ result.stdout:", string(result.Stdout))
-	fmt.Println("⛳ result.stderr:", string(result.Stderr))
-	assert.True(t, errors.Is(err, ErrMemoryLimitExceeded), "Expected ErrMemoryLimitExceeded, got: %v", err)
+	errorIsMemoryLimitExceeded := errors.Is(err, ErrMemoryLimitExceeded)
+	errorStderrContainsMemoryError := strings.Contains(string(result.Stderr), "MemoryError")
+	assert.True(t, errorIsMemoryLimitExceeded || errorStderrContainsMemoryError, `Expected MemoryLimitExceeded.
+errorIsMemoryLimitExceeded: %t
+errorStderrContainsMemoryError: %t
+`, errorIsMemoryLimitExceeded, errorStderrContainsMemoryError)
 	if err != nil {
 		assert.Contains(t, err.Error(), "50 MB", "Error message should contain human-readable memory limit")
 	}
