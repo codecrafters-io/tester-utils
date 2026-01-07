@@ -242,9 +242,13 @@ func TestMemoryLimitInShell(t *testing.T) {
 	}
 
 	e := NewExecutable("./test_helpers/memory_hog.sh")
+	// Set a 50MB memory limit
 	e.MemoryLimitInBytes = 50 * 1024 * 1024
 	e.TimeoutInMilliseconds = 30 * 1000 // 30 seconds should be plenty
 
 	_, err := e.Run()
 	assert.True(t, errors.Is(err, ErrMemoryLimitExceeded), "Expected ErrMemoryLimitExceeded, got: %v", err)
+	if err != nil {
+		assert.Contains(t, err.Error(), "50 MB", "Error message should contain human-readable memory limit")
+	}
 }
