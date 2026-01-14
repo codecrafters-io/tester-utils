@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"io"
@@ -149,6 +150,7 @@ func (e *Executable) Start(args ...string) error {
 	e.ctxCancelFunc = cancel
 
 	cmd := exec.CommandContext(ctx, e.Path, args...)
+	cmd.Env = getSafeEnvironmentVariables()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	e.readDone = make(chan bool)
@@ -343,4 +345,19 @@ func (e *Executable) Kill() error {
 	}
 
 	return err
+}
+
+// getSafeEnvironmentVariables filters out environment variables starting with CODECRAFTERS_SECRET
+func getSafeEnvironmentVariables() []string {
+	allEnvVars := os.Environ()
+	safeEnvVars := make([]string, 0, len(allEnvVars))
+
+	for _, envVar := range allEnvVars {
+		// Filter out environment variables starting with `CODECRAFTERS_SECRET`
+		if !strings.HasPrefix(envVar, "CODECRAFTERS_SECRET") {
+			safeEnvVars = append(safeEnvVars, envVar)
+		}
+	}
+
+	return safeEnvVars
 }

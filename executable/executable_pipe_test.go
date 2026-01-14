@@ -1,6 +1,7 @@
 package executable
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -215,4 +216,26 @@ func TestSegfault(t *testing.T) {
 	result, err := e.Run()
 	assert.NoError(t, err)
 	assert.Equal(t, 139, result.ExitCode)
+}
+
+func TestCodecraftersSecretEnvVarsFiltered(t *testing.T) {
+	os.Setenv("CODECRAFTERS_SECRET_API_KEY", "secret-key-123")
+	os.Setenv("CODECRAFTERS_REPOSITORY_DIR", "/some/path")
+	os.Setenv("TEST_REGULAR_VAR", "regular-value")
+
+	defer func() {
+		os.Unsetenv("CODECRAFTERS_SECRET_API_KEY")
+		os.Unsetenv("TEST_REGULAR_VAR")
+		os.Unsetenv("CODECRAFTERS_REPOSITORY_DIR")
+	}()
+
+	e := NewExecutable("env")
+	result, err := e.Run()
+	assert.NoError(t, err)
+	output := string(result.Stdout)
+
+	assert.NotContains(t, output, "CODECRAFTERS_SECRET_API_KEY")
+	assert.NotContains(t, output, "secret-key-123")
+	assert.Contains(t, output, "TEST_REGULAR_VAR=regular-value")
+	assert.Contains(t, output, "CODECRAFTERS_REPOSITORY_DIR=/some/path")
 }
