@@ -61,7 +61,8 @@ func resolveAbsolutePath(path string) (absolutePath string, err error) {
 
 	if err != nil {
 		// exec.LookPath returns error even if path is found.
-		// Like executable permissions and isDir() checks
+		// When executable permissions and isDir() checks fail
+		// We are only concerned with the path here
 		absolutePath, err = filepath.Abs(path)
 
 		if err != nil {
