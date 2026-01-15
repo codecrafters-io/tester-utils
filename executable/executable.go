@@ -144,6 +144,9 @@ func (e *Executable) Start(args ...string) error {
 	e.ctxCancelFunc = cancel
 
 	cmd := exec.CommandContext(ctx, absolutePath, args...)
+	// Preserve original path as ARGV[0] to match shell behavior.
+	// Programs like busybox use ARGV[0] to determine which utility to run.
+	cmd.Args[0] = e.Path
 	cmd.Env = getSafeEnvironmentVariables()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
