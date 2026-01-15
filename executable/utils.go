@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 
 	"github.com/mattn/go-isatty"
@@ -51,4 +53,21 @@ func closeAllWithCloserFunc(closer func(io.Closer) error, streams ...io.Closer) 
 		}
 	}
 	return firstError
+}
+
+func resolveAbsolutePath(path string) (absolutePath string, err error) {
+	// Try LookPath first
+	absolutePath, err = exec.LookPath(path)
+
+	if err != nil {
+		// exec.LookPath returns error even if path is found.
+		// Like executable permissions and isDir() checks
+		absolutePath, err = filepath.Abs(path)
+
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return filepath.Abs(absolutePath)
 }

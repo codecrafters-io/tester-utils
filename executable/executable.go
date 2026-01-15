@@ -122,20 +122,16 @@ func (e *Executable) Start(args ...string) error {
 		return errors.New("process already in progress")
 	}
 
-	var absolutePath, resolvedPath string
-
 	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
 	// In those cases we use the path returned by LookPath.
-	resolvedPath, err = exec.LookPath(e.Path)
-	if err == nil {
-		absolutePath = resolvedPath
-	} else {
-		absolutePath, err = filepath.Abs(e.Path)
-		if err != nil {
-			return fmt.Errorf("%s not found", filepath.Base(e.Path))
-		}
+	absolutePath, err := resolveAbsolutePath(e.Path)
+
+	if err != nil {
+		return fmt.Errorf("%s not found", filepath.Base(e.Path))
 	}
+
 	fileInfo, err := os.Stat(absolutePath)
+
 	if err != nil {
 		return fmt.Errorf("%s not found", filepath.Base(e.Path))
 	}
@@ -149,7 +145,7 @@ func (e *Executable) Start(args ...string) error {
 	e.ctxWithTimeout = ctx
 	e.ctxCancelFunc = cancel
 
-	cmd := exec.CommandContext(ctx, e.Path, args...)
+	cmd := exec.CommandContext(ctx, absolutePath, args...)
 	cmd.Env = getSafeEnvironmentVariables()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
