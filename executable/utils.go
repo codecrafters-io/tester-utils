@@ -56,19 +56,11 @@ func closeAllWithCloserFunc(closer func(io.Closer) error, streams ...io.Closer) 
 }
 
 func resolveAbsolutePath(path string) (absolutePath string, err error) {
-	// Try LookPath first
-	absolutePath, err = exec.LookPath(path)
-
-	if err != nil {
-		// exec.LookPath returns error even if path is found.
-		// When executable permissions and isDir() checks fail
-		// We are only concerned with the path here
-		absolutePath, err = filepath.Abs(path)
-
-		if err != nil {
-			return "", err
-		}
+	// Let's first check if the executable is present in PATH
+	if executablePath, err := exec.LookPath(path); err == nil {
+		return filepath.Abs(executablePath)
 	}
 
-	return filepath.Abs(absolutePath)
+	// If not, we'll assume it's a relative/absolute path
+	return filepath.Abs(path)
 }
