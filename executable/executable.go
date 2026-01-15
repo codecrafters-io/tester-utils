@@ -142,6 +142,8 @@ func (e *Executable) Start(args ...string) error {
 	}
 
 	// Get the absolute path for e.Path
+	// While passing executables present on PATH, filepath.Abs is unable to resolve their absolute path.
+	// In those cases we use the path returned by LookPath.
 	absolutePath, err := resolveAbsolutePath(e.Path)
 
 	if err != nil {
