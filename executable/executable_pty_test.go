@@ -245,3 +245,21 @@ func TestCodecraftersSecretEnvVarsFilteredInPty(t *testing.T) {
 	assert.Contains(t, output, "TEST_REGULAR_VAR=regular-value")
 	assert.Contains(t, output, "CODECRAFTERS_REPOSITORY_DIR=/some/path")
 }
+
+func TestPathResolutionWithDifferentWorkingDirInPty(t *testing.T) {
+	// Get the absolute path to the test helper script for verification
+	relativePath := "./test_helpers/stdout_echo.sh"
+
+	tempDir, err := os.MkdirTemp("", "executable_test_")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create executable with relative path and set working directory to temp dir
+	e := getNewExecutableForPTYTests(relativePath)
+	e.WorkingDir = tempDir
+
+	// The executable should run without errors
+	result, err := e.Run("test-message")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-message\r\n", string(result.Stdout))
+}
