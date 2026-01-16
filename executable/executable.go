@@ -162,7 +162,16 @@ func (e *Executable) Start(args ...string) error {
 	e.ctxWithTimeout = ctx
 	e.ctxCancelFunc = cancel
 
-	cmd := exec.CommandContext(ctx, absolutePath, args...)
+	var launchPath string
+
+	// If e.Path is a relative path -> use the absolute path for launching the command, else use e.Path
+	if strings.Contains(e.Path, "/") {
+		launchPath = absolutePath
+	} else {
+		launchPath = e.Path
+	}
+
+	cmd := exec.CommandContext(ctx, launchPath, args...)
 	cmd.Env = getSafeEnvironmentVariables()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
