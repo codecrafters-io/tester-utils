@@ -141,6 +141,7 @@ func (e *Executable) Start(args ...string) error {
 		return errors.New("process already in progress")
 	}
 
+	// Get the absolute path for e.Path
 	absolutePath, err := resolveAbsolutePath(e.Path)
 
 	if err != nil {
@@ -162,16 +163,16 @@ func (e *Executable) Start(args ...string) error {
 	e.ctxWithTimeout = ctx
 	e.ctxCancelFunc = cancel
 
-	var launchPath string
+	var commandName string
 
 	// If e.Path is a relative path -> use the absolute path for launching the command, else use e.Path
 	if strings.Contains(e.Path, "/") {
-		launchPath = absolutePath
+		commandName = absolutePath
 	} else {
-		launchPath = e.Path
+		commandName = e.Path
 	}
 
-	cmd := exec.CommandContext(ctx, launchPath, args...)
+	cmd := exec.CommandContext(ctx, commandName, args...)
 	cmd.Env = getSafeEnvironmentVariables()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
