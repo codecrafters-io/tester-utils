@@ -55,12 +55,15 @@ func closeAllWithCloserFunc(closer func(io.Closer) error, streams ...io.Closer) 
 	return firstError
 }
 
+// ResolveAbsolutePath resolves the path according the following rules:
+// 1. If the 'path' contains slash, its absolute path is returned
+// 2. If the 'path' does not contains a slash, it is searched for in PATH and its absolute path is returned
 func resolveAbsolutePath(path string) (absolutePath string, err error) {
-	// Let's first check if the executable is present in PATH
-	if executablePath, err := exec.LookPath(path); err == nil {
-		return filepath.Abs(executablePath)
+	executablePath, err := exec.LookPath(path)
+
+	if err != nil {
+		return filepath.Abs(path)
 	}
 
-	// If not, we'll assume it's a relative/absolute path
-	return filepath.Abs(path)
+	return executablePath, nil
 }
