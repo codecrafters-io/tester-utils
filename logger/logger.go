@@ -51,7 +51,15 @@ func yellowColorize(fstring string, args ...any) []string {
 }
 
 func plainColorize(fstring string, args ...any) []string {
-	return colorize(color.Reset, fstring, args...)
+	var msg string
+
+	if len(args) == 0 {
+		msg = fstring // Treat as plain string if no args
+	} else {
+		msg = fmt.Sprintf(fstring, args...) // Format if args are present
+	}
+
+	return strings.Split(msg, "\n")
 }
 
 // globalLogMutex serializes all logging operations for this package
