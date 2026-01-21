@@ -19,31 +19,44 @@ import (
 
 // Executable represents a program that can be executed
 type Executable struct {
-	Path                  string
-	TimeoutInMilliseconds int
-	loggerFunc            func(string)
-	// If true, the executable's standard streams will be set to PTY instead of pipes
-	ShouldUsePty bool
+	// Path is the path to the executable.
+	Path string
 
-	ctxWithTimeout context.Context
-	ctxCancelFunc  context.CancelFunc
+	// TimeoutInMilliseconds is the maximum time the process can run.
+	TimeoutInMilliseconds int
+
+	// MemoryLimitInBytes sets the maximum memory the process can use (Linux only).
+	// If exceeded, the process will be killed and an error will be returned.
+	// Defaults to 2GB. Set to 0 to disable memory limiting.
+	MemoryLimitInBytes int64
+
+	// ShouldUsePty controls whether the executable's standard streams should be set to PTY instead of pipes.
+	ShouldUsePty bool
 
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
 
+	// Process is the os.Process object for the executable.
+	// TODO: See if this actually needs to be exported?
 	Process *os.Process
+
+	// loggerFunc is the function called w/ output from the executable.
+	loggerFunc func(string)
 
 	// These are set & removed together
 	atleastOneReadDone bool
+	memoryMonitor      *memoryMonitor // Monitors process memory usage and kills if limit exceeded
 	cmd                *exec.Cmd
-	stdoutBytes        []byte
-	stderrBytes        []byte
-	stdoutBuffer       *bytes.Buffer
-	stderrBuffer       *bytes.Buffer
-	stdoutLineWriter   *linewriter.LineWriter
-	stderrLineWriter   *linewriter.LineWriter
+	ctxCancelFunc      context.CancelFunc
+	ctxWithTimeout     context.Context
 	readDone           chan bool
+	stderrBuffer       *bytes.Buffer
+	stderrBytes        []byte
+	stderrLineWriter   *linewriter.LineWriter
 	stdioHandler       stdioHandler
+	stdoutBuffer       *bytes.Buffer
+	stdoutBytes        []byte
+	stdoutLineWriter   *linewriter.LineWriter
 }
 
 // ExecutableResult holds the result of an executable run
@@ -78,8 +91,12 @@ func (e *Executable) Clone() *Executable {
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
 		ShouldUsePty:          e.ShouldUsePty,
+		MemoryLimitInBytes:    e.MemoryLimitInBytes,
 	}
 }
+
+// DefaultMemoryLimitInBytes is the default memory limit (2GB)
+const DefaultMemoryLimitInBytes int64 = 2 * 1024 * 1024 * 1024
 
 // NewExecutable returns an Executable
 func NewExecutable(path string) *Executable {
@@ -87,6 +104,7 @@ func NewExecutable(path string) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            nullLogger,
+		MemoryLimitInBytes:    DefaultMemoryLimitInBytes,
 	}
 }
 
@@ -96,6 +114,7 @@ func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
+		MemoryLimitInBytes:    DefaultMemoryLimitInBytes,
 	}
 }
 
@@ -157,6 +176,9 @@ func (e *Executable) Start(args ...string) error {
 	cmd.Env = getSafeEnvironmentVariables()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	e.memoryMonitor = newMemoryMonitor(e.MemoryLimitInBytes)
+
 	e.readDone = make(chan bool)
 	e.atleastOneReadDone = false
 
@@ -199,6 +221,10 @@ func (e *Executable) Start(args ...string) error {
 
 	// At this point, it is safe to set e.cmd as cmd, if any of the above steps fail, we don't want to leave e.cmd in an inconsistent state
 	e.cmd = cmd
+
+	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
+	e.memoryMonitor.start(cmd.Process.Pid)
+
 	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
 	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
 
@@ -255,16 +281,41 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 	return e.Wait()
 }
 
+// formatBytesHumanReadable formats bytes as a human-readable string (e.g., "50 MB", "2 GB")
+func formatBytesHumanReadable(bytes int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+	switch {
+	case bytes >= GB:
+		return fmt.Sprintf("%d GB", bytes/GB)
+	case bytes >= MB:
+		return fmt.Sprintf("%d MB", bytes/MB)
+	case bytes >= KB:
+		return fmt.Sprintf("%d KB", bytes/KB)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
+// ErrMemoryLimitExceeded is returned when a process exceeds its memory limit
+var ErrMemoryLimitExceeded = errors.New("process exceeded memory limit")
+
 // Wait waits for the program to finish and returns the result.
 func (e *Executable) Wait() (ExecutableResult, error) {
 	defer func() {
 		e.ctxCancelFunc()
-		// Close parent's remaining file descriptors
+
+		e.memoryMonitor.stop()
 		e.stdioHandler.CloseParentStreams()
+
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
+		e.memoryMonitor = nil
 		e.stdoutBuffer = nil
 		e.stderrBuffer = nil
 		e.stdoutBytes = nil
@@ -315,6 +366,12 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	if e.ctxWithTimeout.Err() == context.DeadlineExceeded {
 		return ExecutableResult{}, fmt.Errorf("execution timed out")
 	}
+
+	// Check if process was killed due to OOM (exit code 137 = 128 + SIGKILL)
+	if e.memoryMonitor.wasOOMKilled() {
+		return result, fmt.Errorf("process exceeded memory limit (%s): %w", formatBytesHumanReadable(e.MemoryLimitInBytes), ErrMemoryLimitExceeded)
+	}
+
 	return result, nil
 }
 
