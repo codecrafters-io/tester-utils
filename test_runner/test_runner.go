@@ -7,6 +7,7 @@ import (
 	"github.com/codecrafters-io/tester-utils/executable"
 	"github.com/codecrafters-io/tester-utils/logger"
 	"github.com/codecrafters-io/tester-utils/test_case_harness"
+	"github.com/codecrafters-io/tester-utils/tester_cache"
 	"github.com/codecrafters-io/tester-utils/tester_definition"
 )
 
@@ -39,14 +40,17 @@ func NewQuietTestRunner(steps []TestRunnerStep) TestRunner {
 
 // Run runs all tests in a stageRunner
 func (r TestRunner) Run(isDebug bool, executable *executable.Executable) bool {
+	testerCache := tester_cache.New()
+
 	for index, step := range r.steps {
 		if index != 0 {
 			fmt.Println("")
 		}
 
 		testCaseHarness := test_case_harness.TestCaseHarness{
-			Logger:     r.getLoggerForStep(isDebug, step),
-			Executable: executable.Clone(),
+			Logger:      r.getLoggerForStep(isDebug, step),
+			Executable:  executable.Clone(),
+			TesterCache: testerCache,
 		}
 
 		logger := testCaseHarness.Logger

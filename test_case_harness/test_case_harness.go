@@ -3,6 +3,7 @@ package test_case_harness
 import (
 	"github.com/codecrafters-io/tester-utils/executable"
 	"github.com/codecrafters-io/tester-utils/logger"
+	"github.com/codecrafters-io/tester-utils/tester_cache"
 )
 
 // TestCaseHarness is passed to your TestCase's TestFunc.
@@ -30,6 +31,10 @@ type TestCaseHarness struct {
 
 	// teardownFuncs are run once the error has been reported to the user
 	teardownFuncs []func()
+
+	// TesterCache can be used as a key-value cache by the tester in test functions
+	// for faster access of values (eg. bypassing redundant network requests)
+	TesterCache *tester_cache.TesterCache
 }
 
 func (s *TestCaseHarness) RegisterTeardownFunc(teardownFunc func()) {
