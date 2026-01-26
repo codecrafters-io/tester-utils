@@ -12,7 +12,7 @@ var (
 type cache interface {
 	Get(key string) ([]byte, bool)
 	Set(key string, value []byte)
-	Close()
+	Teardown()
 }
 
 type TesterCache struct {
@@ -42,6 +42,6 @@ func (c *TesterCache) Set(key string, value []byte) {
 	c.testerCacheImplementation.Set(key, value)
 }
 
-func (c *TesterCache) Close() {
-	c.testerCacheImplementation.Close()
+func (c *TesterCache) Teardown() {
+	c.testerCacheImplementation.Teardown()
 }

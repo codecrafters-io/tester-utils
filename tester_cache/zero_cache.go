@@ -13,9 +13,7 @@ func (c *zeroCache) Get(key string) ([]byte, bool) {
 }
 
 func (c *zeroCache) Set(key string, value []byte) {
-	return
 }
 
-func (z *zeroCache) Close() {
-	return
+func (z *zeroCache) Teardown() {
 }

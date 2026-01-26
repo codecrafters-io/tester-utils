@@ -31,6 +31,7 @@ func newRedisCache() (*redisCache, error) {
 	context := context.Background()
 
 	if err := client.Ping(context).Err(); err != nil {
+		client.Close()
 		return nil, fmt.Errorf("Failed to connect to Redis: %s", err)
 	}
 
@@ -54,7 +55,7 @@ func (r *redisCache) Set(key string, value []byte) {
 	r.client.Set(r.context, key, value, 0)
 }
 
-func (r *redisCache) Close() {
+func (r *redisCache) Teardown() {
 	if r.client != nil {
 		r.client.Close()
 	}
