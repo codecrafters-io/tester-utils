@@ -41,6 +41,7 @@ func NewQuietTestRunner(steps []TestRunnerStep) TestRunner {
 // Run runs all tests in a stageRunner
 func (r TestRunner) Run(isDebug bool, executable *executable.Executable) bool {
 	testerCache := tester_cache.New()
+	defer testerCache.Close()
 
 	for index, step := range r.steps {
 		if index != 0 {
