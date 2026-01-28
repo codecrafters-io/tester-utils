@@ -53,7 +53,7 @@ type Executable struct {
 	stderrBuffer       *bytes.Buffer
 	stderrBytes        []byte
 	stderrLineWriter   *linewriter.LineWriter
-	stdioHandler       stdioHandler
+	stdioHandler       ExecutableStdioHandler
 	stdoutBuffer       *bytes.Buffer
 	stdoutBytes        []byte
 	stdoutLineWriter   *linewriter.LineWriter
@@ -131,6 +131,13 @@ func (e *Executable) initializeStdioHandler() {
 	if e.ShouldUsePty {
 		e.stdioHandler = &ptyStdioHandler{}
 	}
+}
+
+func (e *Executable) GetStdioHandler() ExecutableStdioHandler {
+	if e.stdioHandler == nil {
+		panic("Codecrafters Internal Error - GetStdioHandler() called before Start() or after Wait()")
+	}
+	return e.stdioHandler
 }
 
 // Start starts the specified command but does not wait for it to complete.

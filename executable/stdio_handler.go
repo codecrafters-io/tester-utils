@@ -8,7 +8,7 @@ import (
 	"github.com/creack/pty"
 )
 
-type stdioHandler interface {
+type ExecutableStdioHandler interface {
 	// GetStdin returns stdin on the parent's end
 	GetStdin() io.WriteCloser
 
