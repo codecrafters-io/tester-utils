@@ -140,8 +140,10 @@ func (e *Executable) GetStdioHandler() ExecutableStdioHandler {
 	return e.stdioHandler
 }
 
-func (e *Executable) GetStdoutReader() io.Reader {
-	return bytes.NewReader(e.stdoutBytes)
+func (e *Executable) GetStdoutBuffer() []byte {
+	b := make([]byte, len(e.stdoutBytes))
+	copy(b, e.stdoutBytes)
+	return b
 }
 
 // Start starts the specified command but does not wait for it to complete.

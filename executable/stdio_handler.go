@@ -102,6 +102,8 @@ func (h *ptyStdioHandler) GetStdout() io.ReadCloser {
 	return h.master
 }
 
+// GetStderr returns nothing
+// expt: let's set a standard, Stderr is useless in case of pty spawn
 func (h *ptyStdioHandler) GetStderr() io.ReadCloser {
 	return io.NopCloser(bytes.NewReader(nil))
 }
