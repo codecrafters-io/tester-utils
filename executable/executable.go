@@ -240,6 +240,9 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
+	tempBuffer := []byte{}
+	e.stdoutConsumptionBuffer = bytes.NewBuffer(tempBuffer)
+
 	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutConsumptionBuffer, e.stdoutLineWriter)
 	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
 
