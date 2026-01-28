@@ -44,19 +44,23 @@ type Executable struct {
 	loggerFunc func(string)
 
 	// These are set & removed together
-	atleastOneReadDone bool
-	memoryMonitor      *memoryMonitor // Monitors process memory usage and kills if limit exceeded
-	cmd                *exec.Cmd
-	ctxCancelFunc      context.CancelFunc
-	ctxWithTimeout     context.Context
-	readDone           chan bool
-	stderrBuffer       *bytes.Buffer
-	stderrBytes        []byte
-	stderrLineWriter   *linewriter.LineWriter
-	stdioHandler       ExecutableStdioHandler
-	stdoutBuffer       *bytes.Buffer
-	stdoutBytes        []byte
-	stdoutLineWriter   *linewriter.LineWriter
+	atleastOneReadDone      bool
+	memoryMonitor           *memoryMonitor // Monitors process memory usage and kills if limit exceeded
+	cmd                     *exec.Cmd
+	ctxCancelFunc           context.CancelFunc
+	ctxWithTimeout          context.Context
+	readDone                chan bool
+	stderrBuffer            *bytes.Buffer
+	stderrBytes             []byte
+	stderrLineWriter        *linewriter.LineWriter
+	stdioHandler            ExecutableStdioHandler
+	stdoutStreamReader      io.PipeReader
+	stdoutStreamWriter      io.PipeWriter
+	stdoutBuffer            *bytes.Buffer
+	stdoutConsumptionBuffer *bytes.Buffer
+	stdoutBytes             []byte
+
+	stdoutLineWriter *linewriter.LineWriter
 }
 
 // ExecutableResult holds the result of an executable run
@@ -140,10 +144,8 @@ func (e *Executable) GetStdioHandler() ExecutableStdioHandler {
 	return e.stdioHandler
 }
 
-func (e *Executable) GetStdoutBuffer() []byte {
-	b := make([]byte, len(e.stdoutBytes))
-	copy(b, e.stdoutBytes)
-	return b
+func (e *Executable) GetStdoutConsumptionBuffer() io.Reader {
+	return e.stdoutConsumptionBuffer
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -238,15 +240,15 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
-	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutConsumptionBuffer, e.stdoutLineWriter)
 	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
 
 	return nil
 }
 
-func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
+func (e *Executable) setupIORelay(source io.Reader, destinations ...io.Writer) {
 	go func() {
-		combinedDestination := io.MultiWriter(destination1, destination2)
+		combinedDestination := io.MultiWriter(destinations...)
 		// Limit to 30KB (~250 lines at 120 chars per line)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 		if err != nil {
