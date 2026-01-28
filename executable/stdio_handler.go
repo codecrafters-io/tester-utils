@@ -1,7 +1,6 @@
 package executable
 
 import (
-	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -104,8 +103,9 @@ func (h *ptyStdioHandler) GetStdout() io.ReadCloser {
 
 // GetStderr returns nothing
 // expt: let's set a standard, Stderr is useless in case of pty spawn
+// because
 func (h *ptyStdioHandler) GetStderr() io.ReadCloser {
-	return io.NopCloser(bytes.NewReader(nil))
+	return h.master
 }
 
 func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
