@@ -1,7 +1,6 @@
 package executable
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -53,8 +52,9 @@ type Executable struct {
 
 	stdioHandler ExecutableStdioHandler
 
-	stdoutBuffer *bytes.Buffer
-	stdoutBytes  []byte
+	stdoutBufferReader *io.PipeReader
+	stdoutBufferWriter *io.PipeWriter
+	stdoutBytes        []byte
 
 	stdoutLineWriter *linewriter.LineWriter
 }
@@ -142,8 +142,8 @@ func (e *Executable) GetStdioHandler() ExecutableStdioHandler {
 	return e.stdioHandler
 }
 
-func (e *Executable) GetStdoutBuffer() *bytes.Buffer {
-	return e.stdoutBuffer
+func (e *Executable) GetStdoutReader() io.Reader {
+	return e.stdoutBufferReader
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -196,7 +196,7 @@ func (e *Executable) Start(args ...string) error {
 	e.atleastOneReadDone = false
 
 	e.stdoutBytes = []byte{}
-	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
+	e.stdoutBufferReader, e.stdoutBufferWriter = io.Pipe()
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
 	// Initialize stdio handler
@@ -234,7 +234,7 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
-	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBufferWriter, e.stdoutLineWriter)
 
 	return nil
 }
@@ -324,7 +324,10 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
 		e.memoryMonitor = nil
-		e.stdoutBuffer = nil
+		e.stdoutBufferReader.Close()
+		e.stdoutBufferWriter.Close()
+		e.stdoutBufferReader = nil
+		e.stdoutBufferWriter = nil
 		e.stdoutBytes = nil
 		e.readDone = nil
 		e.stdioHandler = nil
@@ -356,10 +359,7 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 
 	e.stdoutLineWriter.Flush()
 
-	stdout := e.stdoutBuffer.Bytes()
-
 	result := ExecutableResult{
-		Stdout:   stdout,
 		ExitCode: exitCode,
 	}
 
