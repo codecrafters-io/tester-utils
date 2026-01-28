@@ -90,21 +90,19 @@ func (h *pipeStdioHandler) TerminateStdin() error {
 
 // ptyStdioHandler deals with PTY based i/o
 type ptyStdioHandler struct {
-	stdoutMaster, stdoutSlave *os.File
-	stderrMaster, stderrSlave *os.File
-	stdinMaster, stdinSlave   *os.File
+	master, slave *os.File
 }
 
 func (h *ptyStdioHandler) GetStdin() io.WriteCloser {
-	return h.stdinMaster
+	return h.master
 }
 
 func (h *ptyStdioHandler) GetStdout() io.ReadCloser {
-	return h.stdoutMaster
+	return h.master
 }
 
 func (h *ptyStdioHandler) GetStderr() io.ReadCloser {
-	return h.stderrMaster
+	return h.master
 }
 
 func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
@@ -113,9 +111,9 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	}
 
 	// Assign slave end of PTYs to the child process
-	cmd.Stdin = h.stdinSlave
-	cmd.Stdout = h.stdoutSlave
-	cmd.Stderr = h.stderrSlave
+	cmd.Stdin = h.slave
+	cmd.Stdout = h.slave
+	cmd.Stderr = h.slave
 
 	return nil
 }
@@ -131,7 +129,7 @@ func (h *ptyStdioHandler) CloseParentStreams() error {
 
 func (h *ptyStdioHandler) TerminateStdin() error {
 	// Send (\n + Ctrl-D) for closing input stream
-	_, err := h.stdinMaster.Write([]byte("\n\004"))
+	_, err := h.master.Write([]byte("\n\004"))
 	return err
 }
 
@@ -140,20 +138,8 @@ func (h *ptyStdioHandler) TerminateStdin() error {
 func (r *ptyStdioHandler) openAll() error {
 	var err error
 
-	r.stdinMaster, r.stdinSlave, err = pty.Open()
+	r.master, r.slave, err = pty.Open()
 	if err != nil {
-		return err
-	}
-
-	r.stdoutMaster, r.stdoutSlave, err = pty.Open()
-	if err != nil {
-		r.closeAll()
-		return err
-	}
-
-	r.stderrMaster, r.stderrSlave, err = pty.Open()
-	if err != nil {
-		r.closeAll()
 		return err
 	}
 
@@ -180,10 +166,10 @@ func (r *ptyStdioHandler) closeAll() error {
 func (r *ptyStdioHandler) closeSlaves() error {
 	// PTY are managed by ptyStdioHandler alone, and are not modified externally, so
 	// closeIfOpen() is not needed here
-	return closeAllWithCloserFunc(closeIfNotNil, r.stdinSlave, r.stdoutSlave, r.stderrSlave)
+	return closeAllWithCloserFunc(closeIfNotNil, r.slave)
 }
 
 // closeMasters closes only the master ends of the PTY pairs.
 func (r *ptyStdioHandler) closeMasters() error {
-	return closeAllWithCloserFunc(closeIfNotNil, r.stdinMaster, r.stdoutMaster, r.stderrMaster)
+	return closeAllWithCloserFunc(closeIfNotNil, r.master)
 }
