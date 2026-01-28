@@ -44,21 +44,17 @@ type Executable struct {
 	loggerFunc func(string)
 
 	// These are set & removed together
-	atleastOneReadDone      bool
-	memoryMonitor           *memoryMonitor // Monitors process memory usage and kills if limit exceeded
-	cmd                     *exec.Cmd
-	ctxCancelFunc           context.CancelFunc
-	ctxWithTimeout          context.Context
-	readDone                chan bool
-	stderrBuffer            *bytes.Buffer
-	stderrBytes             []byte
-	stderrLineWriter        *linewriter.LineWriter
-	stdioHandler            ExecutableStdioHandler
-	stdoutStreamReader      io.PipeReader
-	stdoutStreamWriter      io.PipeWriter
-	stdoutBuffer            *bytes.Buffer
-	stdoutConsumptionBuffer *bytes.Buffer
-	stdoutBytes             []byte
+	atleastOneReadDone bool
+	memoryMonitor      *memoryMonitor // Monitors process memory usage and kills if limit exceeded
+	cmd                *exec.Cmd
+	ctxCancelFunc      context.CancelFunc
+	ctxWithTimeout     context.Context
+	readDone           chan bool
+
+	stdioHandler ExecutableStdioHandler
+
+	stdoutBuffer *bytes.Buffer
+	stdoutBytes  []byte
 
 	stdoutLineWriter *linewriter.LineWriter
 }
@@ -131,7 +127,9 @@ func (e *Executable) HasExited() bool {
 }
 
 func (e *Executable) initializeStdioHandler() {
-	e.stdioHandler = &pipeStdioHandler{}
+	if !e.ShouldUsePty {
+		panic("!e.ShouldUsePty")
+	}
 	if e.ShouldUsePty {
 		e.stdioHandler = &ptyStdioHandler{}
 	}
@@ -142,10 +140,6 @@ func (e *Executable) GetStdioHandler() ExecutableStdioHandler {
 		panic("Codecrafters Internal Error - GetStdioHandler() called before Start() or after Wait()")
 	}
 	return e.stdioHandler
-}
-
-func (e *Executable) GetStdoutConsumptionBuffer() io.Reader {
-	return e.stdoutConsumptionBuffer
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -201,10 +195,6 @@ func (e *Executable) Start(args ...string) error {
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
 
-	e.stderrBytes = []byte{}
-	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
-	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-
 	// Initialize stdio handler
 	e.initializeStdioHandler()
 
@@ -240,11 +230,7 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
-	tempBuffer := []byte{}
-	e.stdoutConsumptionBuffer = bytes.NewBuffer(tempBuffer)
-
-	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutConsumptionBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
 
 	return nil
 }
@@ -335,18 +321,13 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.ctxWithTimeout = nil
 		e.memoryMonitor = nil
 		e.stdoutBuffer = nil
-		e.stderrBuffer = nil
 		e.stdoutBytes = nil
-		e.stderrBytes = nil
-		e.stdoutLineWriter = nil
-		e.stderrLineWriter = nil
 		e.readDone = nil
 		e.stdioHandler = nil
 	}()
 
 	e.stdioHandler.TerminateStdin()
 
-	<-e.readDone
 	<-e.readDone
 
 	err := e.cmd.Wait()
@@ -370,14 +351,11 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 	}
 
 	e.stdoutLineWriter.Flush()
-	e.stderrLineWriter.Flush()
 
 	stdout := e.stdoutBuffer.Bytes()
-	stderr := e.stderrBuffer.Bytes()
 
 	result := ExecutableResult{
 		Stdout:   stdout,
-		Stderr:   stderr,
 		ExitCode: exitCode,
 	}
 
