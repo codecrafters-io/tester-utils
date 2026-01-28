@@ -140,6 +140,10 @@ func (e *Executable) GetStdioHandler() ExecutableStdioHandler {
 	return e.stdioHandler
 }
 
+func (e *Executable) GetStdoutReader() io.Reader {
+	return bytes.NewReader(e.stdoutBytes)
+}
+
 // Start starts the specified command but does not wait for it to complete.
 func (e *Executable) Start(args ...string) error {
 	var err error

@@ -1,6 +1,7 @@
 package executable
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -102,7 +103,7 @@ func (h *ptyStdioHandler) GetStdout() io.ReadCloser {
 }
 
 func (h *ptyStdioHandler) GetStderr() io.ReadCloser {
-	return h.master
+	return io.NopCloser(bytes.NewReader(nil))
 }
 
 func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
@@ -144,22 +145,6 @@ func (r *ptyStdioHandler) openAll() error {
 	}
 
 	return nil
-}
-
-// closeAll closes all PTY file descriptors.
-func (r *ptyStdioHandler) closeAll() error {
-	var firstError error
-
-	// best effort
-	if closeMasterError := r.closeMasters(); closeMasterError != nil {
-		firstError = closeMasterError
-	}
-
-	if closeSlaveError := r.closeSlaves(); closeSlaveError != nil && firstError == nil {
-		firstError = closeSlaveError
-	}
-
-	return firstError
 }
 
 // closeSlaves closes only the slave ends of the PTY pairs.
