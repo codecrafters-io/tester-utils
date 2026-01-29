@@ -87,6 +87,16 @@ func (r *ptyStdioHandler) openAll() error {
 		return err
 	}
 
+	pty.Setsize(r.master, &pty.Winsize{
+		Rows: 100,
+		Cols: 188,
+	})
+
+	pty.Setsize(r.slave, &pty.Winsize{
+		Rows: 100,
+		Cols: 188,
+	})
+
 	return nil
 }
 
