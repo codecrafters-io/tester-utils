@@ -76,12 +76,10 @@ func resolveAbsolutePath(path string) (absolutePath string, err error) {
 }
 
 func getMemoryLimitInBytes() int64 {
-	// 2 GB by default
-	memoryLimitInBytes := int64(2 * 1024 * 1024 * 1024)
 	memoryLimitEnvVar := os.Getenv("EXECUTABLE_MEMORY_LIMIT_IN_MB")
 
 	if memoryLimitEnvVar == "" {
-		return memoryLimitInBytes
+		return DefaultMemoryLimitInBytes
 	}
 
 	convertedMemoryLimitInMb, err := strconv.Atoi(memoryLimitEnvVar)
@@ -91,5 +89,10 @@ func getMemoryLimitInBytes() int64 {
 		panic("Codecrafters Internal Error - EXECUTABLE_MEMORY_LIMIT_IN_MB is not an integer")
 	}
 
-	return int64(convertedMemoryLimitInMb * 1024 * 1024)
+	// Panic if the value is negative - should be notified
+	if convertedMemoryLimitInMb < 0 {
+		panic("Codecrafters Internal Error - EXECUTABLE_MEMORY_LIMIT_IN_MB must be non-negative")
+	}
+
+	return int64(convertedMemoryLimitInMb) * 1024 * 1024
 }
