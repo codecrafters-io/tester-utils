@@ -2,6 +2,7 @@ package executable
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -11,6 +12,29 @@ import (
 
 	"github.com/mattn/go-isatty"
 )
+
+func GetMemoryLimitInBytes() int64 {
+	// 2 GB by default
+	memoryLimitInBytes := int64(2*1024) * 1024 * 1024
+	memoryLimitEnvVar := os.Getenv("EXECUTABLE_MEMORY_LIMIT_IN_MB")
+
+	if memoryLimitEnvVar == "" {
+		return memoryLimitInBytes
+	}
+
+	convertedMemoryLimitInMb, err := strconv.Atoi(memoryLimitEnvVar)
+
+	// Panic if the variable is set but is not a number - should be notified
+	if err != nil {
+		panic("Codecrafters Internal Error - EXECUTABLE_MEMORY_LIMIT_IN_MB is not an integer")
+	}
+
+	if convertedMemoryLimitInMb < 0 {
+		panic(fmt.Sprintf("Codecrafters Internal Error - EXECUTABLE_MEMORY_LIMIT_IN_MB is negative: %d", convertedMemoryLimitInMb))
+	}
+
+	return int64(convertedMemoryLimitInMb) * 1024 * 1024
+}
 
 // isTTY returns true if the object is a tty
 func isTTY(o any) bool {
@@ -73,23 +97,4 @@ func resolveAbsolutePath(path string) (absolutePath string, err error) {
 	// 2. If 'path' was a relative path to the executable, 'executablePath' is the relative path to that executable
 	// So, we convert the relative path to the absolute path
 	return filepath.Abs(executablePath)
-}
-
-func getMemoryLimitInBytes() int64 {
-	// 2 GB by default
-	memoryLimitInBytes := int64(2 * 1024 * 1024 * 1024)
-	memoryLimitEnvVar := os.Getenv("EXECUTABLE_MEMORY_LIMIT_IN_MB")
-
-	if memoryLimitEnvVar == "" {
-		return memoryLimitInBytes
-	}
-
-	convertedMemoryLimitInMb, err := strconv.Atoi(memoryLimitEnvVar)
-
-	// Panic if the variable is set but is not a number - should be notified
-	if err != nil {
-		panic("Codecrafters Internal Error - EXECUTABLE_MEMORY_LIMIT_IN_MB is not an integer")
-	}
-
-	return int64(convertedMemoryLimitInMb * 1024 * 1024)
 }

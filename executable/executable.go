@@ -95,16 +95,13 @@ func (e *Executable) Clone() *Executable {
 	}
 }
 
-// DefaultMemoryLimitInBytes is the default memory limit (2GB)
-const DefaultMemoryLimitInBytes int64 = 2 * 1024 * 1024 * 1024
-
 // NewExecutable returns an Executable
 func NewExecutable(path string) *Executable {
 	return &Executable{
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            nullLogger,
-		MemoryLimitInBytes:    getMemoryLimitInBytes(),
+		MemoryLimitInBytes:    GetMemoryLimitInBytes(),
 	}
 }
 
@@ -114,7 +111,7 @@ func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
-		MemoryLimitInBytes:    getMemoryLimitInBytes(),
+		MemoryLimitInBytes:    GetMemoryLimitInBytes(),
 	}
 }
 
