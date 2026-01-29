@@ -143,7 +143,7 @@ func (e *Executable) GetStdioHandler() ExecutableStdioHandler {
 }
 
 func (e *Executable) GetStdoutReader() io.Reader {
-	return e.stdioHandler.GetStdout()
+	return e.stdoutBufferReader
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -234,7 +234,7 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
-	// e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBufferWriter, e.stdoutLineWriter)
+	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBufferWriter, e.stdoutLineWriter)
 
 	return nil
 }
