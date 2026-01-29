@@ -104,7 +104,7 @@ func NewExecutable(path string) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            nullLogger,
-		MemoryLimitInBytes:    DefaultMemoryLimitInBytes,
+		MemoryLimitInBytes:    getMemoryLimitInBytes(),
 	}
 }
 
@@ -114,7 +114,7 @@ func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
-		MemoryLimitInBytes:    DefaultMemoryLimitInBytes,
+		MemoryLimitInBytes:    getMemoryLimitInBytes(),
 	}
 }
 
