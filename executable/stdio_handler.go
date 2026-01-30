@@ -59,6 +59,9 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	cmd.Stdout = h.slave
 	cmd.Stderr = h.slave
 
+	// creack/pty uses this (for single pty setup)
+	cmd.SysProcAttr.Setpgid = false
+
 	// creack/pty uses this
 	cmd.SysProcAttr.Setsid = true
 	cmd.SysProcAttr.Setctty = true
