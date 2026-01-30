@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/creack/pty"
 )
@@ -60,9 +61,13 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	cmd.Stderr = h.slave
 
 	cmd.SysProcAttr.Setsid = true
-	cmd.SysProcAttr.Setctty = true
-	cmd.ExtraFiles = append(cmd.ExtraFiles, h.slave)
-	cmd.SysProcAttr.Ctty = int(h.slave.Fd())
+
+	// Only for linux
+	if runtime.GOOS != "darwin" {
+		cmd.SysProcAttr.Noctty = true
+		cmd.SysProcAttr.Setctty = true
+		cmd.SysProcAttr.Ctty = 0
+	}
 
 	return nil
 }
