@@ -61,6 +61,7 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 
 	cmd.SysProcAttr.Setsid = true
 	cmd.SysProcAttr.Setctty = true
+	cmd.ExtraFiles = append(cmd.ExtraFiles, h.slave)
 	cmd.SysProcAttr.Ctty = int(h.slave.Fd())
 
 	return nil
