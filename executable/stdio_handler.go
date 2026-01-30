@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 
 	"github.com/creack/pty"
 )
@@ -60,12 +59,9 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	cmd.Stdout = h.slave
 	cmd.Stderr = h.slave
 
-	// Only for linux
-	if runtime.GOOS != "darwin" {
-		cmd.SysProcAttr.Setsid = true
-		cmd.SysProcAttr.Setctty = true
-		cmd.SysProcAttr.Ctty = 0
-	}
+	// creack/pty uses this
+	cmd.SysProcAttr.Setsid = true
+	cmd.SysProcAttr.Setctty = true
 
 	return nil
 }
