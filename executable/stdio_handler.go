@@ -60,10 +60,9 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	cmd.Stdout = h.slave
 	cmd.Stderr = h.slave
 
-	cmd.SysProcAttr.Setsid = true
-
 	// Only for linux
 	if runtime.GOOS != "darwin" {
+		cmd.SysProcAttr.Setsid = true
 		cmd.SysProcAttr.Noctty = true
 		cmd.SysProcAttr.Setctty = true
 		cmd.SysProcAttr.Ctty = 0
