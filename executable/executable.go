@@ -188,6 +188,7 @@ func (e *Executable) Start(args ...string) error {
 	cmd := exec.CommandContext(ctx, commandName, args...)
 	cmd.Env = getSafeEnvironmentVariables()
 	cmd.Dir = e.WorkingDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	e.memoryMonitor = newMemoryMonitor(e.MemoryLimitInBytes)
 
