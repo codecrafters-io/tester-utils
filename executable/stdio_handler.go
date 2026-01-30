@@ -59,6 +59,10 @@ func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	cmd.Stdout = h.slave
 	cmd.Stderr = h.slave
 
+	cmd.SysProcAttr.Setsid = true
+	cmd.SysProcAttr.Setctty = true
+	cmd.SysProcAttr.Ctty = int(h.slave.Fd())
+
 	return nil
 }
 
