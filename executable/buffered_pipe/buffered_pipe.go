@@ -5,24 +5,43 @@ import (
 	"sync"
 )
 
-// BufferedPipe wraps io.Pipe with non-blocking writes
+// BufferedPipe wraps io.Pipe with non-blocking, ordered writes
 type BufferedPipe struct {
 	pipeReader *io.PipeReader
 	pipeWriter *io.PipeWriter
+	writeQueue chan []byte
 	wg         sync.WaitGroup
 	closeOnce  sync.Once
 }
 
-// NewBufferedPipe creates a new BufferedPipe
-func NewBufferedPipe() *BufferedPipe {
+// NewBufferedPipe creates a new BufferedPipe with specified buffer size
+func NewBufferedPipe(bufferSize int) *BufferedPipe {
 	pr, pw := io.Pipe()
-	return &BufferedPipe{
+	bp := &BufferedPipe{
 		pipeReader: pr,
 		pipeWriter: pw,
+		writeQueue: make(chan []byte, bufferSize),
+	}
+
+	// Start single writer goroutine to preserve order
+	bp.wg.Add(1)
+	go bp.writerLoop()
+
+	return bp
+}
+
+// writerLoop processes writes sequentially
+func (bp *BufferedPipe) writerLoop() {
+	defer bp.wg.Done()
+	defer bp.pipeWriter.Close()
+
+	for data := range bp.writeQueue {
+		bp.pipeWriter.Write(data)
 	}
 }
 
-// Write queues data for writing in a goroutine. Never blocks the caller.
+// Write queues data for writing. Never blocks the caller.
+// If buffer is full, drops the data but returns success.
 func (bp *BufferedPipe) Write(p []byte) (n int, err error) {
 	if len(p) == 0 {
 		return 0, nil
@@ -32,29 +51,24 @@ func (bp *BufferedPipe) Write(p []byte) (n int, err error) {
 	data := make([]byte, len(p))
 	copy(data, p)
 
-	// Track this write
-	bp.wg.Add(1)
-
-	// Write in background goroutine
-	go func() {
-		defer bp.wg.Done()
-		bp.pipeWriter.Write(data)
-	}()
-
-	return len(p), nil
+	select {
+	case bp.writeQueue <- data:
+		return len(p), nil
+	default:
+		return len(p), nil
+	}
 }
 
 // Read reads data from the pipe. Blocks until data is available.
-// Returns io.EOF when pipe is closed and all data has been read.
 func (bp *BufferedPipe) Read(p []byte) (n int, err error) {
 	return bp.pipeReader.Read(p)
 }
 
-// CloseWrite waits for all pending writes to complete, then closes the pipe
+// CloseWrite waits for all queued writes to complete, then closes the pipe
 func (bp *BufferedPipe) CloseWrite() error {
 	bp.closeOnce.Do(func() {
-		bp.wg.Wait()          // Wait for all Write() goroutines to finish
-		bp.pipeWriter.Close() // Close the write side
+		close(bp.writeQueue) // No more writes accepted
+		bp.wg.Wait()         // Wait for writerLoop to finish
 	})
 	return nil
 }
