@@ -246,6 +246,7 @@ func (e *Executable) setupIORelay(source io.Reader, buffer *bytes.Buffer, stream
 
 		combinedDestination := io.MultiWriter(buffer, lineWriter, stream)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
+		stream.Close()
 
 		if err != nil {
 			if !(isTTY(source) && errors.Is(err, syscall.EIO)) {
