@@ -16,6 +16,7 @@ import (
 
 	"github.com/codecrafters-io/tester-utils/executable/stdio_handler"
 	"github.com/codecrafters-io/tester-utils/linewriter"
+	"go.chromium.org/luci/common/system/environ"
 )
 
 // Executable represents a program that can be executed
@@ -37,6 +38,9 @@ type Executable struct {
 
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
+
+	// Env contains environment variables required for the executable
+	Env environ.Env
 
 	// Process is the os.Process object for the executable.
 	// TODO: See if this actually needs to be exported?
@@ -180,7 +184,7 @@ func (e *Executable) Start(args ...string) error {
 	}
 
 	cmd := exec.CommandContext(ctx, commandName, args...)
-	cmd.Env = getSafeEnvironmentVariables()
+	cmd.Env = e.initializeSafeEnvVars()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
@@ -426,9 +430,14 @@ func (e *Executable) Kill() error {
 	return err
 }
 
-// getSafeEnvironmentVariables filters out environment variables starting with CODECRAFTERS_SECRET
-func getSafeEnvironmentVariables() []string {
-	allEnvVars := os.Environ()
+// initializeSafeEnvVars initializes environment variables for the executable
+// Environment variables starting with CODECRAFTERS_SECRET are filtered out
+func (e *Executable) initializeSafeEnvVars() []string {
+	if e.Env.Len() == 0 {
+		e.Env = environ.New(os.Environ())
+	}
+
+	allEnvVars := e.Env.Sorted()
 	safeEnvVars := make([]string, 0, len(allEnvVars))
 
 	for _, envVar := range allEnvVars {
