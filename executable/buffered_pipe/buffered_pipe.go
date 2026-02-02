@@ -67,6 +67,10 @@ func (bp *BufferedPipe) Read(p []byte) (n int, err error) {
 // CloseWrite waits for all queued writes to complete, then closes the pipe
 func (bp *BufferedPipe) CloseWrite() error {
 	bp.closeOnce.Do(func() {
+		// Close the read end first to unblock any pending writes to pipeWriter.
+		// io.Pipe is synchronous - writes block until reads occur. If no one
+		// is reading from pipeReader, writerLoop would block forever.
+		bp.pipeReader.Close()
 		close(bp.writeQueue) // No more writes accepted
 		bp.wg.Wait()         // Wait for writerLoop to finish
 	})

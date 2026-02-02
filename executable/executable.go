@@ -452,11 +452,16 @@ func (e *Executable) Kill() error {
 // initializeSafeEnvVars initializes environment variables for the executable
 // Environment variables starting with CODECRAFTERS_SECRET are filtered out
 func (e *Executable) initializeSafeEnvVars() []string {
+	// Use user-specified environment if set, otherwise get current OS environment.
+	// Don't cache in e.Env to ensure fresh os.Environ() on each execution when
+	// the user hasn't explicitly set environment variables.
+	var allEnvVars []string
 	if e.Env.Len() == 0 {
-		e.Env = environ.New(os.Environ())
+		allEnvVars = os.Environ()
+	} else {
+		allEnvVars = e.Env.Sorted()
 	}
 
-	allEnvVars := e.Env.Sorted()
 	safeEnvVars := make([]string, 0, len(allEnvVars))
 
 	for _, envVar := range allEnvVars {
