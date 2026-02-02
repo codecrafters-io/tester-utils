@@ -5,17 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
-	"io"
-	"os/exec"
-	"syscall"
-
-	"github.com/codecrafters-io/tester-utils/executable/buffered_pipe"
 	"github.com/codecrafters-io/tester-utils/executable/stdio_handler"
+	"github.com/codecrafters-io/tester-utils/executable/stdio_stream"
 	"github.com/codecrafters-io/tester-utils/linewriter"
 	"go.chromium.org/luci/common/system/environ"
 )
@@ -61,12 +60,12 @@ type Executable struct {
 	stderrBuffer     *bytes.Buffer
 	stderrBytes      []byte
 	stderrLineWriter *linewriter.LineWriter
-	stderrStream     *buffered_pipe.BufferedPipe
+	stderrStream     *stdio_stream.StdioStream
 
 	stdoutBuffer     *bytes.Buffer
 	stdoutBytes      []byte
 	stdoutLineWriter *linewriter.LineWriter
-	stdoutStream     *buffered_pipe.BufferedPipe
+	stdoutStream     *stdio_stream.StdioStream
 }
 
 // ExecutableResult holds the result of an executable run
@@ -211,7 +210,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-	e.stdoutStream = buffered_pipe.NewBufferedPipe(30000)
+	e.stdoutStream = stdio_stream.NewStdioStream(30000)
 	defer func() {
 		if err != nil {
 			e.stdoutStream.CloseWrite()
@@ -221,7 +220,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-	e.stderrStream = buffered_pipe.NewBufferedPipe(30000)
+	e.stderrStream = stdio_stream.NewStdioStream(30000)
 	defer func() {
 		if err != nil {
 			e.stderrStream.CloseWrite()
@@ -266,14 +265,16 @@ func (e *Executable) Start(args ...string) error {
 	return nil
 }
 
-func (e *Executable) setupIORelay(source io.Reader, buffer *bytes.Buffer, stream *buffered_pipe.BufferedPipe, lineWriter *linewriter.LineWriter) {
+func (e *Executable) setupIORelay(source io.Reader, buffer *bytes.Buffer, stream *stdio_stream.StdioStream, lineWriter *linewriter.LineWriter) {
 	go func() {
 
 		combinedDestination := io.MultiWriter(buffer, lineWriter, stream)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 
 		// Close the write end of the pipe as soon as reading from the source has been finished
-		stream.CloseWrite()
+		if err := stream.CloseWrite(); err != nil {
+			fmt.Println(err)
+		}
 
 		if err != nil {
 			if !(isTTY(source) && errors.Is(err, syscall.EIO)) {
