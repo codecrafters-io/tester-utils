@@ -211,7 +211,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-	e.stdoutStream = buffered_pipe.NewBufferedPipe(30000)
+	e.stdoutStream = buffered_pipe.NewBufferedPipe()
 	defer func() {
 		if err != nil {
 			e.stdoutStream.CloseWrite()
@@ -221,7 +221,7 @@ func (e *Executable) Start(args ...string) error {
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-	e.stderrStream = buffered_pipe.NewBufferedPipe(30000)
+	e.stderrStream = buffered_pipe.NewBufferedPipe()
 	defer func() {
 		if err != nil {
 			e.stderrStream.CloseWrite()
