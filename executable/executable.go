@@ -143,11 +143,11 @@ func (e *Executable) GetStdinWriter() io.Writer {
 	return e.StdioHandler.GetStdin()
 }
 
-func (e *Executable) GetStdoutStream() io.Reader {
+func (e *Executable) GetStdoutStreamReader() io.Reader {
 	return e.stdoutStream
 }
 
-func (e *Executable) GetStderrStream() io.Reader {
+func (e *Executable) GetStderrStreamReader() io.Reader {
 	return e.stderrStream
 }
 
