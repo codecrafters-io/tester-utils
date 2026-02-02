@@ -135,12 +135,20 @@ func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
 }
 
-func (e *Executable) GetStdoutStream() *buffered_pipe.BufferedPipe {
+// GetStdinWriter returns the stdin interface of the executable as a io.Writer interface
+// TODO: Unsafe thing here is that this could be type casted to *os.File and mis-used
+// But it would be visible
+// Should I create a 'writeOnlyFile' type wrapping the given GetStdin() with only Write() method?
+func (e *Executable) GetStdinWriter() io.Writer {
+	return e.StdioHandler.GetStdin()
+}
+
+func (e *Executable) GetStdoutStream() io.Reader {
 	return e.stdoutStream
 }
 
-func (e *Executable) GetStdinDevice() io.Writer {
-	return e.StdioHandler.GetStdin()
+func (e *Executable) GetStderrStream() io.Reader {
+	return e.stderrStream
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -242,11 +250,12 @@ func (e *Executable) Start(args ...string) error {
 
 func (e *Executable) setupIORelay(source io.Reader, buffer *bytes.Buffer, stream *buffered_pipe.BufferedPipe, lineWriter *linewriter.LineWriter) {
 	go func() {
-		defer stream.Close()
 
 		combinedDestination := io.MultiWriter(buffer, lineWriter, stream)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
-		stream.Close()
+
+		// Close the write end of the pipe as soon as reading from the source has been finished
+		stream.CloseWrite()
 
 		if err != nil {
 			if !(isTTY(source) && errors.Is(err, syscall.EIO)) {
@@ -344,9 +353,6 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 
 	<-e.readDone
 	<-e.readDone
-
-	e.stdoutStream.Close()
-	e.stderrStream.Close()
 
 	err := e.cmd.Wait()
 
