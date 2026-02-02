@@ -95,12 +95,19 @@ func nullLogger(msg string) {
 }
 
 func (e *Executable) Clone() *Executable {
+	var clonedStdioHandler stdio_handler.StdioHandler
+
+	// Only clone if the handler is already present
+	if e.StdioHandler != nil {
+		clonedStdioHandler = e.StdioHandler.Clone()
+	}
+
 	return &Executable{
 		Path:                  e.Path,
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
-		StdioHandler:          e.StdioHandler.Clone(),
+		StdioHandler:          clonedStdioHandler,
 		MemoryLimitInBytes:    e.MemoryLimitInBytes,
 		Env:                   e.Env.Clone(),
 	}
