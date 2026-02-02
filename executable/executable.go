@@ -95,6 +95,7 @@ func nullLogger(msg string) {
 }
 
 func (e *Executable) Clone() *Executable {
+	e.ensureStdioHandler()
 	return &Executable{
 		Path:                  e.Path,
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
@@ -132,6 +133,14 @@ func (e *Executable) isRunning() bool {
 	return e.cmd != nil
 }
 
+// ensureStdioHandler initializes StdioHandler to a default if nil.
+// This ensures zero-value Executable structs work correctly.
+func (e *Executable) ensureStdioHandler() {
+	if e.StdioHandler == nil {
+		e.StdioHandler = &stdio_handler.PipeTrioStdioHandler{}
+	}
+}
+
 func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
 }
@@ -141,6 +150,7 @@ func (e *Executable) HasExited() bool {
 // But it would be visible
 // Should I create a 'writeOnlyFile' type wrapping the given GetStdin() with only Write() method?
 func (e *Executable) GetStdinWriter() io.Writer {
+	e.ensureStdioHandler()
 	return e.StdioHandler.GetStdin()
 }
 
@@ -220,6 +230,9 @@ func (e *Executable) Start(args ...string) error {
 			e.stderrStream.CloseWrite()
 		}
 	}()
+
+	// Ensure StdioHandler is initialized for zero-value Executable structs
+	e.ensureStdioHandler()
 
 	// Setup standard streams
 	if err := e.StdioHandler.SetupStreams(cmd); err != nil {

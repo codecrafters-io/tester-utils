@@ -10,6 +10,7 @@ type BufferedPipe struct {
 	buffer     chan []byte
 	pipeClosed chan struct{}
 	once       sync.Once
+	pending    []byte // stores remaining bytes from partial reads
 }
 
 // NewBufferedPipe creates a new BufferedPipe with the specified buffer size
@@ -45,12 +46,23 @@ func (bp *BufferedPipe) Write(p []byte) (n int, err error) {
 // Read reads data from the pipe. Blocks until data is available.
 // Returns io.EOF when pipe is closed and no data remains.
 func (bp *BufferedPipe) Read(p []byte) (n int, err error) {
+	// First, return any pending bytes from a previous partial read
+	if len(bp.pending) > 0 {
+		n = copy(p, bp.pending)
+		bp.pending = bp.pending[n:]
+		return n, nil
+	}
+
 	select {
 	case data, ok := <-bp.buffer:
 		if !ok {
 			return 0, io.EOF
 		}
-		return copy(p, data), nil
+		n = copy(p, data)
+		if n < len(data) {
+			bp.pending = data[n:]
+		}
+		return n, nil
 	case <-bp.pipeClosed:
 		// Pipe closed, check if any data remains
 		select {
@@ -58,7 +70,11 @@ func (bp *BufferedPipe) Read(p []byte) (n int, err error) {
 			if !ok {
 				return 0, io.EOF
 			}
-			return copy(p, data), nil
+			n = copy(p, data)
+			if n < len(data) {
+				bp.pending = data[n:]
+			}
+			return n, nil
 		default:
 			return 0, io.EOF
 		}
