@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codecrafters-io/tester-utils/executable/stdio_handler"
 	"github.com/stretchr/testify/assert"
 )
 
 func getNewExecutableForPTYTests(path string) *Executable {
 	e := NewExecutable(path)
-	e.ShouldUsePty = true
+	e.StdioHandler = &stdio_handler.PtyTrioStdioHandler{}
 	return e
 }
 
@@ -158,10 +159,10 @@ func TestStdinInPty(t *testing.T) {
 	e.Start("cat")
 	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.stdioHandler.GetStdin().Write([]byte("has cat"))
+	e.StdioHandler.GetStdin().Write([]byte("has cat"))
 	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.stdioHandler.GetStdin().Close()
+	e.StdioHandler.GetStdin().Close()
 	time.Sleep(100 * time.Millisecond)
 	assert.True(t, e.HasExited(), "Expected to have exited")
 }

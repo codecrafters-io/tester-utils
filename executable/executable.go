@@ -5,16 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
-	"io"
-	"os/exec"
-	"syscall"
-
+	"github.com/codecrafters-io/tester-utils/executable/stdio_handler"
+	"github.com/codecrafters-io/tester-utils/executable/stdio_stream"
 	"github.com/codecrafters-io/tester-utils/linewriter"
+	"go.chromium.org/luci/common/system/environ"
 )
 
 // Executable represents a program that can be executed
@@ -30,11 +32,15 @@ type Executable struct {
 	// Defaults to 2GB. Set to 0 to disable memory limiting.
 	MemoryLimitInBytes int64
 
-	// ShouldUsePty controls whether the executable's standard streams should be set to PTY instead of pipes.
-	ShouldUsePty bool
+	// StdioHandler dictates how an executable's stdin/stdout/stderr are set up
+	// For more info, please see the stdio_handler module
+	StdioHandler stdio_handler.StdioHandler
 
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
+
+	// Env contains environment variables required for the executable
+	Env environ.Env
 
 	// Process is the os.Process object for the executable.
 	// TODO: See if this actually needs to be exported?
@@ -50,13 +56,16 @@ type Executable struct {
 	ctxCancelFunc      context.CancelFunc
 	ctxWithTimeout     context.Context
 	readDone           chan bool
-	stderrBuffer       *bytes.Buffer
-	stderrBytes        []byte
-	stderrLineWriter   *linewriter.LineWriter
-	stdioHandler       stdioHandler
-	stdoutBuffer       *bytes.Buffer
-	stdoutBytes        []byte
-	stdoutLineWriter   *linewriter.LineWriter
+
+	stderrBuffer     *bytes.Buffer
+	stderrBytes      []byte
+	stderrLineWriter *linewriter.LineWriter
+	stderrStream     *stdio_stream.StdioStream
+
+	stdoutBuffer     *bytes.Buffer
+	stdoutBytes      []byte
+	stdoutLineWriter *linewriter.LineWriter
+	stdoutStream     *stdio_stream.StdioStream
 }
 
 // ExecutableResult holds the result of an executable run
@@ -85,13 +94,21 @@ func nullLogger(msg string) {
 }
 
 func (e *Executable) Clone() *Executable {
+	var clonedStdioHandler stdio_handler.StdioHandler
+
+	// Only clone if the handler is already present
+	if e.StdioHandler != nil {
+		clonedStdioHandler = e.StdioHandler.Clone()
+	}
+
 	return &Executable{
 		Path:                  e.Path,
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
-		ShouldUsePty:          e.ShouldUsePty,
+		StdioHandler:          clonedStdioHandler,
 		MemoryLimitInBytes:    e.MemoryLimitInBytes,
+		Env:                   e.Env.Clone(),
 	}
 }
 
@@ -101,6 +118,7 @@ func NewExecutable(path string) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            nullLogger,
+		StdioHandler:          &stdio_handler.PipeTrioStdioHandler{},
 		MemoryLimitInBytes:    GetMemoryLimitInBytes(),
 	}
 }
@@ -111,6 +129,7 @@ func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
+		StdioHandler:          &stdio_handler.PipeTrioStdioHandler{},
 		MemoryLimitInBytes:    GetMemoryLimitInBytes(),
 	}
 }
@@ -123,11 +142,20 @@ func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
 }
 
-func (e *Executable) initializeStdioHandler() {
-	e.stdioHandler = &pipeStdioHandler{}
-	if e.ShouldUsePty {
-		e.stdioHandler = &ptyStdioHandler{}
-	}
+// GetStdinWriter returns the stdin interface of the executable as a io.Writer interface
+// TODO: Unsafe thing here is that this could be type casted to *os.File and mis-used
+// But it would be visible
+// Should I create a 'writeOnlyFile' type wrapping the given GetStdin() with only Write() method?
+func (e *Executable) GetStdinWriter() io.Writer {
+	return e.StdioHandler.GetStdin()
+}
+
+func (e *Executable) GetStdoutStreamReader() io.Reader {
+	return e.stdoutStream
+}
+
+func (e *Executable) GetStderrStreamReader() io.Reader {
+	return e.stderrStream
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -170,7 +198,7 @@ func (e *Executable) Start(args ...string) error {
 	}
 
 	cmd := exec.CommandContext(ctx, commandName, args...)
-	cmd.Env = getSafeEnvironmentVariables()
+	cmd.Env = e.initializeSafeEnvVars()
 	cmd.Dir = e.WorkingDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
@@ -182,28 +210,37 @@ func (e *Executable) Start(args ...string) error {
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+	e.stdoutStream = stdio_stream.NewStdioStream(30000)
+	defer func() {
+		if err != nil {
+			e.stdoutStream.CloseWrite()
+		}
+	}()
 
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-
-	// Initialize stdio handler
-	e.initializeStdioHandler()
+	e.stderrStream = stdio_stream.NewStdioStream(30000)
+	defer func() {
+		if err != nil {
+			e.stderrStream.CloseWrite()
+		}
+	}()
 
 	// Setup standard streams
-	if err := e.stdioHandler.SetupStreams(cmd); err != nil {
+	if err := e.StdioHandler.SetupStreams(cmd); err != nil {
 		return err
 	}
 
 	err = cmd.Start()
 	// Close child streams after cmd.Start() regardless of success/failure
 	// cmd.Start() duplicates streams to child, we can close our duplicated copies
-	e.stdioHandler.CloseChildStreams()
+	e.StdioHandler.CloseChildStreams()
 
 	// In case of error, close parent's streams as well
 	defer func() {
 		if err != nil {
-			e.stdioHandler.CloseParentStreams()
+			e.StdioHandler.CloseParentStreams()
 		}
 	}()
 
@@ -222,21 +259,24 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
-	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
+	e.setupIORelay(e.StdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutStream, e.stdoutLineWriter)
+	e.setupIORelay(e.StdioHandler.GetStderr(), e.stderrBuffer, e.stderrStream, e.stderrLineWriter)
 
 	return nil
 }
 
-func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
+func (e *Executable) setupIORelay(source io.Reader, buffer *bytes.Buffer, stream *stdio_stream.StdioStream, lineWriter *linewriter.LineWriter) {
 	go func() {
-		combinedDestination := io.MultiWriter(destination1, destination2)
-		// Limit to 30KB (~250 lines at 120 chars per line)
+
+		combinedDestination := io.MultiWriter(buffer, lineWriter, stream)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
+
+		// Close the write end of the pipe as soon as reading from the source has been finished
+		if err := stream.CloseWrite(); err != nil {
+			fmt.Println(err)
+		}
+
 		if err != nil {
-			// In linux, if the source is a terminal device, read(2) results in EIO when the child process has exited and closed its slave end
-			// (Source: The Linux Programming Interface Appendix F - 64.1)
-			// This can be safely ignored
 			if !(isTTY(source) && errors.Is(err, syscall.EIO)) {
 				panic(err)
 			}
@@ -248,7 +288,7 @@ func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, dest
 
 		e.atleastOneReadDone = true
 		e.readDone <- true
-		io.Copy(io.Discard, source) // Let's drain the stream in case any content is leftover
+		io.Copy(io.Discard, source)
 	}()
 }
 
@@ -273,7 +313,7 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 		return ExecutableResult{}, err
 	}
 
-	e.stdioHandler.GetStdin().Write(stdin)
+	e.StdioHandler.GetStdin().Write(stdin)
 
 	return e.Wait()
 }
@@ -306,24 +346,29 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.ctxCancelFunc()
 
 		e.memoryMonitor.stop()
-		e.stdioHandler.CloseParentStreams()
+		e.StdioHandler.CloseParentStreams()
 
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
 		e.memoryMonitor = nil
+
 		e.stdoutBuffer = nil
-		e.stderrBuffer = nil
 		e.stdoutBytes = nil
-		e.stderrBytes = nil
 		e.stdoutLineWriter = nil
+		e.stdoutStream = nil
+
+		e.stderrBuffer = nil
+		e.stderrBytes = nil
 		e.stderrLineWriter = nil
+		e.stderrStream = nil
+
 		e.readDone = nil
-		e.stdioHandler = nil
+		e.StdioHandler = e.StdioHandler.Clone()
 	}()
 
-	e.stdioHandler.TerminateStdin()
+	e.StdioHandler.TerminateStdin()
 
 	<-e.readDone
 	<-e.readDone
@@ -405,9 +450,14 @@ func (e *Executable) Kill() error {
 	return err
 }
 
-// getSafeEnvironmentVariables filters out environment variables starting with CODECRAFTERS_SECRET
-func getSafeEnvironmentVariables() []string {
-	allEnvVars := os.Environ()
+// initializeSafeEnvVars initializes environment variables for the executable
+// Environment variables starting with CODECRAFTERS_SECRET are filtered out
+func (e *Executable) initializeSafeEnvVars() []string {
+	if e.Env.Len() == 0 {
+		e.Env = environ.New(os.Environ())
+	}
+
+	allEnvVars := e.Env.Sorted()
 	safeEnvVars := make([]string, 0, len(allEnvVars))
 
 	for _, envVar := range allEnvVars {
