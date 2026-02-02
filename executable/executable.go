@@ -102,6 +102,7 @@ func (e *Executable) Clone() *Executable {
 		WorkingDir:            e.WorkingDir,
 		StdioHandler:          e.StdioHandler.Clone(),
 		MemoryLimitInBytes:    e.MemoryLimitInBytes,
+		Env:                   e.Env.Clone(),
 	}
 }
 
@@ -204,6 +205,8 @@ func (e *Executable) Start(args ...string) error {
 
 	// Setup standard streams
 	if err := e.StdioHandler.SetupStreams(cmd); err != nil {
+		e.stdoutStream.Close()
+		e.stderrStream.Close()
 		return err
 	}
 
@@ -216,6 +219,8 @@ func (e *Executable) Start(args ...string) error {
 	defer func() {
 		if err != nil {
 			e.StdioHandler.CloseParentStreams()
+			e.stdoutStream.Close()
+			e.stderrStream.Close()
 		}
 	}()
 

@@ -18,6 +18,7 @@ type BufferedPipe struct {
 	partial       []byte
 	partialOffset int
 	mu            sync.Mutex
+	readMu        sync.Mutex // serializes Read calls to prevent race conditions with concurrent readers
 }
 
 // NewBufferedPipe creates a new BufferedPipe with the specified buffer size.
@@ -93,6 +94,9 @@ func (bp *BufferedPipe) Write(p []byte) (n int, err error) {
 // Read reads data from the pipe. Blocks until data is available or pipe is closed.
 // Implements standard io.Reader semantics with proper partial read handling.
 func (bp *BufferedPipe) Read(p []byte) (n int, err error) {
+	bp.readMu.Lock()
+	defer bp.readMu.Unlock()
+
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 
