@@ -54,7 +54,6 @@ func NewStdioStream(bufferSize int) *StdioStream {
 // writerLoop processes writes sequentially
 func (bp *StdioStream) writerLoop() {
 	defer bp.wg.Done()
-	defer bp.writeConn.Close()
 
 	for data := range bp.writeQueue {
 		bp.writeConn.Write(data) // Won't block due to kernel buffering

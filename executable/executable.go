@@ -228,7 +228,7 @@ func (e *Executable) Start(args ...string) error {
 	}()
 
 	// Setup standard streams
-	if err := e.StdioHandler.SetupStreams(cmd); err != nil {
+	if err = e.StdioHandler.SetupStreams(cmd); err != nil {
 		return err
 	}
 
