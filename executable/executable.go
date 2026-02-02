@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/codecrafters-io/tester-utils/executable/stdio_handler"
 	"github.com/codecrafters-io/tester-utils/linewriter"
 )
 
@@ -30,8 +31,9 @@ type Executable struct {
 	// Defaults to 2GB. Set to 0 to disable memory limiting.
 	MemoryLimitInBytes int64
 
-	// ShouldUsePty controls whether the executable's standard streams should be set to PTY instead of pipes.
-	ShouldUsePty bool
+	// StdioHandler dictates how an executable's stdin/stdout/stderr are set up
+	// For more info, please see the stdio_handler module
+	StdioHandler stdio_handler.StdioHandler
 
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
@@ -50,13 +52,18 @@ type Executable struct {
 	ctxCancelFunc      context.CancelFunc
 	ctxWithTimeout     context.Context
 	readDone           chan bool
-	stderrBuffer       *bytes.Buffer
-	stderrBytes        []byte
-	stderrLineWriter   *linewriter.LineWriter
-	stdioHandler       stdioHandler
-	stdoutBuffer       *bytes.Buffer
-	stdoutBytes        []byte
-	stdoutLineWriter   *linewriter.LineWriter
+
+	stderrBuffer     *bytes.Buffer
+	stderrBytes      []byte
+	stderrLineWriter *linewriter.LineWriter
+	stderrStreamIn   *io.PipeWriter
+	stderrStreamOut  *io.PipeReader
+
+	stdoutBuffer     *bytes.Buffer
+	stdoutBytes      []byte
+	stdoutLineWriter *linewriter.LineWriter
+	stdoutStreamIn   *io.PipeWriter
+	stdoutStreamOut  *io.PipeReader
 }
 
 // ExecutableResult holds the result of an executable run
@@ -90,7 +97,7 @@ func (e *Executable) Clone() *Executable {
 		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
 		loggerFunc:            e.loggerFunc,
 		WorkingDir:            e.WorkingDir,
-		ShouldUsePty:          e.ShouldUsePty,
+		StdioHandler:          e.StdioHandler.Clone(),
 		MemoryLimitInBytes:    e.MemoryLimitInBytes,
 	}
 }
@@ -101,6 +108,7 @@ func NewExecutable(path string) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            nullLogger,
+		StdioHandler:          &stdio_handler.PipeTrioStdioHandler{},
 		MemoryLimitInBytes:    GetMemoryLimitInBytes(),
 	}
 }
@@ -111,6 +119,7 @@ func NewVerboseExecutable(path string, loggerFunc func(string)) *Executable {
 		Path:                  path,
 		TimeoutInMilliseconds: 10 * 1000,
 		loggerFunc:            loggerFunc,
+		StdioHandler:          &stdio_handler.PipeTrioStdioHandler{},
 		MemoryLimitInBytes:    GetMemoryLimitInBytes(),
 	}
 }
@@ -123,11 +132,12 @@ func (e *Executable) HasExited() bool {
 	return e.atleastOneReadDone
 }
 
-func (e *Executable) initializeStdioHandler() {
-	e.stdioHandler = &pipeStdioHandler{}
-	if e.ShouldUsePty {
-		e.stdioHandler = &ptyStdioHandler{}
-	}
+func (e *Executable) GetStdoutStream() *io.PipeReader {
+	return e.stdoutStreamOut
+}
+
+func (e *Executable) GetStderrStream() *io.PipeReader {
+	return e.stderrStreamOut
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -182,28 +192,27 @@ func (e *Executable) Start(args ...string) error {
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
+	e.stdoutStreamOut, e.stdoutStreamIn = io.Pipe()
 
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-
-	// Initialize stdio handler
-	e.initializeStdioHandler()
+	e.stderrStreamOut, e.stderrStreamIn = io.Pipe()
 
 	// Setup standard streams
-	if err := e.stdioHandler.SetupStreams(cmd); err != nil {
+	if err := e.StdioHandler.SetupStreams(cmd); err != nil {
 		return err
 	}
 
 	err = cmd.Start()
 	// Close child streams after cmd.Start() regardless of success/failure
 	// cmd.Start() duplicates streams to child, we can close our duplicated copies
-	e.stdioHandler.CloseChildStreams()
+	e.StdioHandler.CloseChildStreams()
 
 	// In case of error, close parent's streams as well
 	defer func() {
 		if err != nil {
-			e.stdioHandler.CloseParentStreams()
+			e.StdioHandler.CloseParentStreams()
 		}
 	}()
 
@@ -222,15 +231,15 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
-	e.setupIORelay(e.stdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
-	e.setupIORelay(e.stdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
+	e.setupIORelay(e.StdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
+	e.setupIORelay(e.StdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
 
 	return nil
 }
 
-func (e *Executable) setupIORelay(source io.Reader, destination1 io.Writer, destination2 io.Writer) {
+func (e *Executable) setupIORelay(source io.Reader, destinations ...io.Writer) {
 	go func() {
-		combinedDestination := io.MultiWriter(destination1, destination2)
+		combinedDestination := io.MultiWriter(destinations...)
 		// Limit to 30KB (~250 lines at 120 chars per line)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
 		if err != nil {
@@ -273,7 +282,7 @@ func (e *Executable) RunWithStdin(stdin []byte, args ...string) (ExecutableResul
 		return ExecutableResult{}, err
 	}
 
-	e.stdioHandler.GetStdin().Write(stdin)
+	e.StdioHandler.GetStdin().Write(stdin)
 
 	return e.Wait()
 }
@@ -306,27 +315,39 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.ctxCancelFunc()
 
 		e.memoryMonitor.stop()
-		e.stdioHandler.CloseParentStreams()
+		e.StdioHandler.CloseParentStreams()
 
 		e.atleastOneReadDone = false
 		e.cmd = nil
 		e.ctxCancelFunc = nil
 		e.ctxWithTimeout = nil
 		e.memoryMonitor = nil
+
 		e.stdoutBuffer = nil
-		e.stderrBuffer = nil
 		e.stdoutBytes = nil
-		e.stderrBytes = nil
 		e.stdoutLineWriter = nil
+		e.stdoutStreamIn = nil
+		e.stdoutStreamOut = nil
+
+		e.stderrBuffer = nil
+		e.stderrBytes = nil
 		e.stderrLineWriter = nil
+		e.stderrStreamIn = nil
+		e.stderrStreamOut = nil
+
 		e.readDone = nil
-		e.stdioHandler = nil
+		e.StdioHandler = e.StdioHandler.Clone()
 	}()
 
-	e.stdioHandler.TerminateStdin()
+	e.StdioHandler.TerminateStdin()
 
 	<-e.readDone
 	<-e.readDone
+
+	// After stdout and stderr of the program has been read from, we close the stdoutStreamIn
+	// and stderrStreamIn of the executable
+	e.stdoutStreamIn.Close()
+	e.stderrStreamIn.Close()
 
 	err := e.cmd.Wait()
 

@@ -155,10 +155,10 @@ func TestStdin(t *testing.T) {
 	e.Start("cat")
 	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.stdioHandler.GetStdin().Write([]byte("has cat"))
+	e.StdioHandler.GetStdin().Write([]byte("has cat"))
 	assert.False(t, e.HasExited(), "Expected to not have exited")
 
-	e.stdioHandler.GetStdin().Close()
+	e.StdioHandler.GetStdin().Close()
 	time.Sleep(100 * time.Millisecond)
 	assert.True(t, e.HasExited(), "Expected to have exited")
 }
