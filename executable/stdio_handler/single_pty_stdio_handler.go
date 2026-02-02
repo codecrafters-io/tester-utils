@@ -83,3 +83,10 @@ func (h *SinglePtyStdioHandler) TerminateStdin() error {
 	_, err := h.master.Write([]byte("\n\004"))
 	return err
 }
+
+func (h *SinglePtyStdioHandler) Clone() StdioHandler {
+	return &SinglePtyStdioHandler{
+		Width:  h.Width,
+		Height: h.Height,
+	}
+}
