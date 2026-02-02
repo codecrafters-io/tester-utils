@@ -139,6 +139,10 @@ func (e *Executable) GetStdoutStream() *buffered_pipe.BufferedPipe {
 	return e.stdoutStream
 }
 
+func (e *Executable) GetStdinDevice() io.Writer {
+	return e.StdioHandler.GetStdin()
+}
+
 // Start starts the specified command but does not wait for it to complete.
 func (e *Executable) Start(args ...string) error {
 	var err error
