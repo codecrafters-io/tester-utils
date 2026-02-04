@@ -57,7 +57,11 @@ jobs:
           git checkout ${{ github.head_ref }}
 
       - name: Regenerate Fixtures
-        run: CODECRAFTERS_RECORD_FIXTURES=true make test
+        env:
+          CODECRAFTERS_RECORD_FIXTURES: "true"
+          # TODO: Figure out a way to make this repo-agnostic
+          CODECRAFTERS_SECRET_OPENROUTER_API_KEY: ${{ secrets.CODECRAFTERS_SECRET_OPENROUTER_API_KEY }}
+        run: make test
 
       - name: Update Fixtures
         run: |
