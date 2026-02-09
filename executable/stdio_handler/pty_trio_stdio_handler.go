@@ -13,6 +13,7 @@ type PtyTrioStdioHandler struct {
 	stdoutMaster, stdoutSlave *os.File
 	stderrMaster, stderrSlave *os.File
 	stdinMaster, stdinSlave   *os.File
+	DisableAutomaticIORelay   bool
 }
 
 func (h *PtyTrioStdioHandler) GetStdin() io.WriteCloser {
@@ -56,7 +57,13 @@ func (h *PtyTrioStdioHandler) TerminateStdin() error {
 }
 
 func (h *PtyTrioStdioHandler) Clone() StdioHandler {
-	return &PtyTrioStdioHandler{}
+	return &PtyTrioStdioHandler{
+		DisableAutomaticIORelay: h.DisableAutomaticIORelay,
+	}
+}
+
+func (h *PtyTrioStdioHandler) NeedsIORelaySetup() bool {
+	return !h.DisableAutomaticIORelay
 }
 
 // openAll attempts to open all three PTY pairs.

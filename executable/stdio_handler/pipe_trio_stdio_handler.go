@@ -7,9 +7,10 @@ import (
 
 // PipeTrioStdioHandler deals with pipe based i/o
 type PipeTrioStdioHandler struct {
-	stdinPipe  io.WriteCloser
-	stdoutPipe io.ReadCloser
-	stderrPipe io.ReadCloser
+	stdinPipe               io.WriteCloser
+	stdoutPipe              io.ReadCloser
+	stderrPipe              io.ReadCloser
+	DisableAutomaticIORelay bool
 }
 
 func (h *PipeTrioStdioHandler) GetStdin() io.WriteCloser {
@@ -63,5 +64,11 @@ func (h *PipeTrioStdioHandler) TerminateStdin() error {
 }
 
 func (h *PipeTrioStdioHandler) Clone() StdioHandler {
-	return &PipeTrioStdioHandler{}
+	return &PipeTrioStdioHandler{
+		DisableAutomaticIORelay: h.DisableAutomaticIORelay,
+	}
+}
+
+func (h *PipeTrioStdioHandler) NeedsIORelaySetup() bool {
+	return !h.DisableAutomaticIORelay
 }

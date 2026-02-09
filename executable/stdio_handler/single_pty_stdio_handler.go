@@ -11,10 +11,11 @@ import (
 )
 
 type SinglePtyStdioHandler struct {
-	Width  uint
-	Height uint
-	master *os.File
-	slave  *os.File
+	Width                   uint
+	Height                  uint
+	DisableAutomaticIORelay bool
+	master                  *os.File
+	slave                   *os.File
 }
 
 func (h *SinglePtyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
@@ -86,7 +87,12 @@ func (h *SinglePtyStdioHandler) TerminateStdin() error {
 
 func (h *SinglePtyStdioHandler) Clone() StdioHandler {
 	return &SinglePtyStdioHandler{
-		Width:  h.Width,
-		Height: h.Height,
+		Width:                   h.Width,
+		Height:                  h.Height,
+		DisableAutomaticIORelay: h.DisableAutomaticIORelay,
 	}
+}
+
+func (h *SinglePtyStdioHandler) NeedsIORelaySetup() bool {
+	return !h.DisableAutomaticIORelay
 }

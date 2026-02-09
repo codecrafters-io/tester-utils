@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/codecrafters-io/tester-utils/executable/stdio_handler"
-	"github.com/codecrafters-io/tester-utils/executable/stdio_stream"
 	"github.com/codecrafters-io/tester-utils/linewriter"
 	"go.chromium.org/luci/common/system/environ"
 )
@@ -60,12 +59,10 @@ type Executable struct {
 	stderrBuffer     *bytes.Buffer
 	stderrBytes      []byte
 	stderrLineWriter *linewriter.LineWriter
-	stderrStream     *stdio_stream.StdioStream
 
 	stdoutBuffer     *bytes.Buffer
 	stdoutBytes      []byte
 	stdoutLineWriter *linewriter.LineWriter
-	stdoutStream     *stdio_stream.StdioStream
 }
 
 // ExecutableResult holds the result of an executable run
@@ -143,19 +140,18 @@ func (e *Executable) HasExited() bool {
 }
 
 // GetStdinWriter returns the stdin interface of the executable as a io.Writer interface
-// TODO: Unsafe thing here is that this could be type casted to *os.File and mis-used
-// But it would be visible
-// Should I create a 'writeOnlyFile' type wrapping the given GetStdin() with only Write() method?
 func (e *Executable) GetStdinWriter() io.Writer {
 	return e.StdioHandler.GetStdin()
 }
 
-func (e *Executable) GetStdoutStreamReader() io.Reader {
-	return e.stdoutStream
+// GetStdoutReader returns the stdout interface of the executable as a io.Reader interface
+func (e *Executable) GetStdoutReader() io.Reader {
+	return e.StdioHandler.GetStdout()
 }
 
-func (e *Executable) GetStderrStreamReader() io.Reader {
-	return e.stderrStream
+// GetStderrReader returns the stderr interface of the executable as a io.Reader interface
+func (e *Executable) GetStderrReader() io.Reader {
+	return e.StdioHandler.GetStderr()
 }
 
 // Start starts the specified command but does not wait for it to complete.
@@ -210,24 +206,11 @@ func (e *Executable) Start(args ...string) error {
 	e.stdoutBytes = []byte{}
 	e.stdoutBuffer = bytes.NewBuffer(e.stdoutBytes)
 	e.stdoutLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-	e.stdoutStream = stdio_stream.NewStdioStream(30000)
-	defer func() {
-		if err != nil {
-			e.stdoutStream.CloseWrite()
-		}
-	}()
 
 	e.stderrBytes = []byte{}
 	e.stderrBuffer = bytes.NewBuffer(e.stderrBytes)
 	e.stderrLineWriter = linewriter.New(newLoggerWriter(e.loggerFunc), 500*time.Millisecond)
-	e.stderrStream = stdio_stream.NewStdioStream(30000)
-	defer func() {
-		if err != nil {
-			e.stderrStream.CloseWrite()
-		}
-	}()
 
-	// Setup standard streams
 	if err := e.StdioHandler.SetupStreams(cmd); err != nil {
 		return err
 	}
@@ -259,22 +242,18 @@ func (e *Executable) Start(args ...string) error {
 	// Start memory monitoring for RSS-based memory limiting (Linux only, no-op on other platforms)
 	e.memoryMonitor.start(cmd.Process.Pid)
 
-	e.setupIORelay(e.StdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutStream, e.stdoutLineWriter)
-	e.setupIORelay(e.StdioHandler.GetStderr(), e.stderrBuffer, e.stderrStream, e.stderrLineWriter)
+	if e.StdioHandler.NeedsIORelaySetup() {
+		e.setupIORelay(e.StdioHandler.GetStdout(), e.stdoutBuffer, e.stdoutLineWriter)
+		e.setupIORelay(e.StdioHandler.GetStderr(), e.stderrBuffer, e.stderrLineWriter)
+	}
 
 	return nil
 }
 
-func (e *Executable) setupIORelay(source io.Reader, buffer *bytes.Buffer, stream *stdio_stream.StdioStream, lineWriter *linewriter.LineWriter) {
+func (e *Executable) setupIORelay(source io.Reader, destinations ...io.Writer) {
 	go func() {
-
-		combinedDestination := io.MultiWriter(buffer, lineWriter, stream)
+		combinedDestination := io.MultiWriter(destinations...)
 		bytesWritten, err := io.Copy(combinedDestination, io.LimitReader(source, 30000))
-
-		// Close the write end of the pipe as soon as reading from the source has been finished
-		if err := stream.CloseWrite(); err != nil {
-			fmt.Println(err)
-		}
 
 		if err != nil {
 			if !(isTTY(source) && errors.Is(err, syscall.EIO)) {
@@ -357,12 +336,10 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 		e.stdoutBuffer = nil
 		e.stdoutBytes = nil
 		e.stdoutLineWriter = nil
-		e.stdoutStream = nil
 
 		e.stderrBuffer = nil
 		e.stderrBytes = nil
 		e.stderrLineWriter = nil
-		e.stderrStream = nil
 
 		e.readDone = nil
 		e.StdioHandler = e.StdioHandler.Clone()
@@ -370,8 +347,11 @@ func (e *Executable) Wait() (ExecutableResult, error) {
 
 	e.StdioHandler.TerminateStdin()
 
-	<-e.readDone
-	<-e.readDone
+	// If stdio handler required I/O relay, relay to finish copying
+	if e.StdioHandler.NeedsIORelaySetup() {
+		<-e.readDone
+		<-e.readDone
+	}
 
 	err := e.cmd.Wait()
 

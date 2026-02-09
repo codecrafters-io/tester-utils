@@ -28,4 +28,7 @@ type StdioHandler interface {
 	TerminateStdin() error
 
 	Clone() StdioHandler
+
+	// NeedsIORelaySetup returns true if i/o relay needs to be set up for the handler's stdout & stderr
+	NeedsIORelaySetup() bool
 }
