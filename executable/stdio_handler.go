@@ -132,7 +132,12 @@ func (h *pipeInPtysOutStdioHandler) CloseChildStreams() error {
 }
 
 func (h *pipeInPtysOutStdioHandler) CloseParentStreams() error {
-	return h.closeMasters()
+	stdinCloseError := closeIfOpen(h.stdinPipe)
+	mastersCloseError := h.closeMasters()
+	if stdinCloseError != nil {
+		return stdinCloseError
+	}
+	return mastersCloseError
 }
 
 func (h *pipeInPtysOutStdioHandler) TerminateStdin() error {
