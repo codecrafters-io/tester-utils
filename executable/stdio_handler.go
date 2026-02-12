@@ -31,26 +31,26 @@ type stdioHandler interface {
 	TerminateStdin() error
 }
 
-// pipeStdioHandler deals with pipe based i/o
-type pipeStdioHandler struct {
+// pipeTrioStdioHandler deals with pipe based i/o
+type pipeTrioStdioHandler struct {
 	stdinPipe  io.WriteCloser
 	stdoutPipe io.ReadCloser
 	stderrPipe io.ReadCloser
 }
 
-func (h *pipeStdioHandler) GetStdin() io.WriteCloser {
+func (h *pipeTrioStdioHandler) GetStdin() io.WriteCloser {
 	return h.stdinPipe
 }
 
-func (h *pipeStdioHandler) GetStdout() io.ReadCloser {
+func (h *pipeTrioStdioHandler) GetStdout() io.ReadCloser {
 	return h.stdoutPipe
 }
 
-func (h *pipeStdioHandler) GetStderr() io.ReadCloser {
+func (h *pipeTrioStdioHandler) GetStderr() io.ReadCloser {
 	return h.stderrPipe
 }
 
-func (h *pipeStdioHandler) SetupStreams(cmd *exec.Cmd) error {
+func (h *pipeTrioStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	var err error
 
 	if h.stdinPipe, err = cmd.StdinPipe(); err != nil {
@@ -71,16 +71,16 @@ func (h *pipeStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	return nil
 }
 
-func (h *pipeStdioHandler) CloseChildStreams() error {
+func (h *pipeTrioStdioHandler) CloseChildStreams() error {
 	// No action needed here: closing child streams is automatically handled by exec library
 	return nil
 }
 
-func (h *pipeStdioHandler) CloseParentStreams() error {
+func (h *pipeTrioStdioHandler) CloseParentStreams() error {
 	return closeAllWithCloserFunc(closeIfOpen, h.stdinPipe, h.stdoutPipe, h.stderrPipe)
 }
 
-func (h *pipeStdioHandler) TerminateStdin() error {
+func (h *pipeTrioStdioHandler) TerminateStdin() error {
 	if err := h.stdinPipe.Close(); err != nil {
 		return err
 	}
@@ -88,62 +88,61 @@ func (h *pipeStdioHandler) TerminateStdin() error {
 	return nil
 }
 
-// ptyStdioHandler deals with PTY based i/o
-type ptyStdioHandler struct {
+// pipeInPtysOutStdioHandler deals with PTY based i/o
+// It uses a pipe for stdin and pty devices for stdout and stderr
+type pipeInPtysOutStdioHandler struct {
 	stdoutMaster, stdoutSlave *os.File
 	stderrMaster, stderrSlave *os.File
-	stdinMaster, stdinSlave   *os.File
+	stdinPipe                 io.WriteCloser
 }
 
-func (h *ptyStdioHandler) GetStdin() io.WriteCloser {
-	return h.stdinMaster
+func (h *pipeInPtysOutStdioHandler) GetStdin() io.WriteCloser {
+	return h.stdinPipe
 }
 
-func (h *ptyStdioHandler) GetStdout() io.ReadCloser {
+func (h *pipeInPtysOutStdioHandler) GetStdout() io.ReadCloser {
 	return h.stdoutMaster
 }
 
-func (h *ptyStdioHandler) GetStderr() io.ReadCloser {
+func (h *pipeInPtysOutStdioHandler) GetStderr() io.ReadCloser {
 	return h.stderrMaster
 }
 
-func (h *ptyStdioHandler) SetupStreams(cmd *exec.Cmd) error {
+func (h *pipeInPtysOutStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	if err := h.openAll(); err != nil {
 		return err
 	}
 
-	// Assign slave end of PTYs to the child process
-	cmd.Stdin = h.stdinSlave
+	var err error
+	h.stdinPipe, err = cmd.StdinPipe()
+
+	if err != nil {
+		return err
+	}
+
 	cmd.Stdout = h.stdoutSlave
 	cmd.Stderr = h.stderrSlave
 
 	return nil
 }
 
-func (h *ptyStdioHandler) CloseChildStreams() error {
+func (h *pipeInPtysOutStdioHandler) CloseChildStreams() error {
 	// Close slave ends - child process now owns them
 	return h.closeSlaves()
 }
 
-func (h *ptyStdioHandler) CloseParentStreams() error {
+func (h *pipeInPtysOutStdioHandler) CloseParentStreams() error {
 	return h.closeMasters()
 }
 
-func (h *ptyStdioHandler) TerminateStdin() error {
-	// Send (\n + Ctrl-D) for closing input stream
-	_, err := h.stdinMaster.Write([]byte("\n\004"))
-	return err
+func (h *pipeInPtysOutStdioHandler) TerminateStdin() error {
+	return h.stdinPipe.Close()
 }
 
-// openAll attempts to open all three PTY pairs.
+// openAll attempts to open all PTY pairs.
 // Returns an error if any PTY fails to open, and automatically cleans up any successfully opened PTYs.
-func (r *ptyStdioHandler) openAll() error {
+func (r *pipeInPtysOutStdioHandler) openAll() error {
 	var err error
-
-	r.stdinMaster, r.stdinSlave, err = pty.Open()
-	if err != nil {
-		return err
-	}
 
 	r.stdoutMaster, r.stdoutSlave, err = pty.Open()
 	if err != nil {
@@ -161,7 +160,7 @@ func (r *ptyStdioHandler) openAll() error {
 }
 
 // closeAll closes all PTY file descriptors.
-func (r *ptyStdioHandler) closeAll() error {
+func (r *pipeInPtysOutStdioHandler) closeAll() error {
 	var firstError error
 
 	// best effort
@@ -177,13 +176,13 @@ func (r *ptyStdioHandler) closeAll() error {
 }
 
 // closeSlaves closes only the slave ends of the PTY pairs.
-func (r *ptyStdioHandler) closeSlaves() error {
+func (r *pipeInPtysOutStdioHandler) closeSlaves() error {
 	// PTY are managed by ptyStdioHandler alone, and are not modified externally, so
 	// closeIfOpen() is not needed here
-	return closeAllWithCloserFunc(closeIfNotNil, r.stdinSlave, r.stdoutSlave, r.stderrSlave)
+	return closeAllWithCloserFunc(closeIfNotNil, r.stdoutSlave, r.stderrSlave)
 }
 
 // closeMasters closes only the master ends of the PTY pairs.
-func (r *ptyStdioHandler) closeMasters() error {
-	return closeAllWithCloserFunc(closeIfNotNil, r.stdinMaster, r.stdoutMaster, r.stderrMaster)
+func (r *pipeInPtysOutStdioHandler) closeMasters() error {
+	return closeAllWithCloserFunc(closeIfNotNil, r.stdoutMaster, r.stderrMaster)
 }

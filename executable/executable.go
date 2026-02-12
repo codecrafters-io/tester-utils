@@ -124,9 +124,9 @@ func (e *Executable) HasExited() bool {
 }
 
 func (e *Executable) initializeStdioHandler() {
-	e.stdioHandler = &pipeStdioHandler{}
+	e.stdioHandler = &pipeTrioStdioHandler{}
 	if e.ShouldUsePty {
-		e.stdioHandler = &ptyStdioHandler{}
+		e.stdioHandler = &pipeInPtysOutStdioHandler{}
 	}
 }
 
