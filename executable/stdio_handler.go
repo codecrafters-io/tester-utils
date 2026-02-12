@@ -117,6 +117,7 @@ func (h *pipeInPtysOutStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	h.stdinPipe, err = cmd.StdinPipe()
 
 	if err != nil {
+		h.closeAll()
 		return err
 	}
 
@@ -132,7 +133,12 @@ func (h *pipeInPtysOutStdioHandler) CloseChildStreams() error {
 }
 
 func (h *pipeInPtysOutStdioHandler) CloseParentStreams() error {
-	return h.closeMasters()
+	stdinErr := closeIfOpen(h.stdinPipe)
+	mastersErr := h.closeMasters()
+	if stdinErr != nil {
+		return stdinErr
+	}
+	return mastersErr
 }
 
 func (h *pipeInPtysOutStdioHandler) TerminateStdin() error {
