@@ -117,6 +117,7 @@ func (h *pipeInPtysOutStdioHandler) SetupStreams(cmd *exec.Cmd) error {
 	h.stdinPipe, err = cmd.StdinPipe()
 
 	if err != nil {
+		h.closeAll()
 		return err
 	}
 
