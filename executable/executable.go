@@ -30,8 +30,8 @@ type Executable struct {
 	// Defaults to 2GB. Set to 0 to disable memory limiting.
 	MemoryLimitInBytes int64
 
-	// ShouldUsePty controls whether the executable's standard streams should be set to PTY instead of pipes.
-	ShouldUsePty bool
+	// ShouldUsePtyOutputStreams controls whether the executable's standard streams should be set to PTY instead of pipes.
+	ShouldUsePtyOutputStreams bool
 
 	// WorkingDir can be set before calling Start or Run to customize the working directory of the executable.
 	WorkingDir string
@@ -86,12 +86,12 @@ func nullLogger(msg string) {
 
 func (e *Executable) Clone() *Executable {
 	return &Executable{
-		Path:                  e.Path,
-		TimeoutInMilliseconds: e.TimeoutInMilliseconds,
-		loggerFunc:            e.loggerFunc,
-		WorkingDir:            e.WorkingDir,
-		ShouldUsePty:          e.ShouldUsePty,
-		MemoryLimitInBytes:    e.MemoryLimitInBytes,
+		Path:                      e.Path,
+		TimeoutInMilliseconds:     e.TimeoutInMilliseconds,
+		loggerFunc:                e.loggerFunc,
+		WorkingDir:                e.WorkingDir,
+		ShouldUsePtyOutputStreams: e.ShouldUsePtyOutputStreams,
+		MemoryLimitInBytes:        e.MemoryLimitInBytes,
 	}
 }
 
@@ -124,9 +124,9 @@ func (e *Executable) HasExited() bool {
 }
 
 func (e *Executable) initializeStdioHandler() {
-	e.stdioHandler = &pipeStdioHandler{}
-	if e.ShouldUsePty {
-		e.stdioHandler = &ptyStdioHandler{}
+	e.stdioHandler = &pipeTrioStdioHandler{}
+	if e.ShouldUsePtyOutputStreams {
+		e.stdioHandler = &pipeInPtysOutStdioHandler{}
 	}
 }
 

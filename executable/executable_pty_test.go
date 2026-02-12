@@ -10,7 +10,7 @@ import (
 
 func getNewExecutableForPTYTests(path string) *Executable {
 	e := NewExecutable(path)
-	e.ShouldUsePty = true
+	e.ShouldUsePtyOutputStreams = true
 	return e
 }
 
