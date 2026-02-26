@@ -93,7 +93,9 @@ func (r TestRunner) getLoggerForStep(isDebug bool, step TestRunnerStep) *logger.
 }
 
 func (r TestRunner) reportTestError(err error, isDebug bool, logger *logger.Logger) {
-	logger.Errorf("%s", err)
+	if err.Error() != "" {
+		logger.Errorf("%s", err)
+	}
 	logger.Errorf("Test failed")
 }
 
