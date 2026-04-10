@@ -139,7 +139,7 @@ func (e *Executable) Start(args ...string) error {
 	}
 
 	// Get the absolute path for e.Path
-	absolutePath, err := resolveAbsolutePath(e.Path)
+	absolutePath, err := ResolveAbsolutePath(e.Path)
 
 	if err != nil {
 		return fmt.Errorf("%s not found", filepath.Base(e.Path))

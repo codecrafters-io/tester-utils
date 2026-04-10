@@ -84,7 +84,7 @@ func closeAllWithCloserFunc(closer func(io.Closer) error, streams ...io.Closer) 
 // 1. If executable is not found ('path' is neither in $PATH, nor found at the path specified) -> Error is returned
 // 2. If the 'path' contains slash, its absolute path is returned
 // 3. If the 'path' does not contains a slash, it is searched for in PATH and its absolute path
-func resolveAbsolutePath(path string) (absolutePath string, err error) {
+func ResolveAbsolutePath(path string) (absolutePath string, err error) {
 	executablePath, err := exec.LookPath(path)
 
 	// exec.LeookPath() failed: Try filepath.Abs()
