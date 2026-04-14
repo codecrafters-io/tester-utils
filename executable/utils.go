@@ -87,7 +87,7 @@ func closeAllWithCloserFunc(closer func(io.Closer) error, streams ...io.Closer) 
 func ResolveAbsolutePath(path string) (absolutePath string, err error) {
 	executablePath, err := exec.LookPath(path)
 
-	// exec.LeookPath() failed: Try filepath.Abs()
+	// exec.LookPath() failed: Try filepath.Abs()
 	if err != nil {
 		return filepath.Abs(path)
 	}
