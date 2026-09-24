@@ -67,4 +67,7 @@ jobs:
 
       - name: Update Fixtures
         run: |
-          git diff --quiet || (git add . && git commit -m "ci: add regenerated fixtures" && git push)
+          # Staged first, since a fixture recorded for the first time is an
+          # untracked file and `git diff` doesn't report those.
+          git add -A
+          git diff --cached --quiet || (git commit -m "ci: add regenerated fixtures" && git push)
